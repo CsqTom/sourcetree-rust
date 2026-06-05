@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 文件变更状态分类
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub enum ChangeStatus {
     /// 新增
     Added,

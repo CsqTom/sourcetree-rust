@@ -76,3 +76,78 @@ pub fn get_current_branch(repo_path: String) -> Result<String, String> {
     let branch = GitService::current_branch(&repo).map_err(|e| e.to_string())?;
     Ok(branch)
 }
+
+/// 获取单次提交的变更文件列表
+#[tauri::command]
+pub fn get_commit_files(repo_path: String, commit_id: String) -> Result<Vec<serde_json::Value>, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(["diff-tree", "--no-commit-id", "--name-status", "-r", &commit_id])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git diff-tree 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("获取提交文件失败: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<serde_json::Value> = stdout
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                Some(serde_json::json!({
+                    "status": parts[0],
+                    "path": parts[1],
+                }))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(files)
+}
+
+/// 获取单次提交的差异（对比该提交与其父提交）
+#[tauri::command]
+pub fn get_commit_diff(repo_path: String, commit_id: String) -> Result<String, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(["show", "--format=", &commit_id])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git show 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("获取提交差异失败: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.to_string())
+}
+
+/// 获取某次提交中单个文件的变更内容
+#[tauri::command]
+pub fn get_commit_file_diff(repo_path: String, commit_id: String, file_path: String) -> Result<String, String> {
+    use std::process::Command;
+
+    let output = Command::new("git")
+        .args(["show", "--format=", &commit_id, "--", &file_path])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git show -- <file> 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("获取提交文件变更失败: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.to_string())
+}

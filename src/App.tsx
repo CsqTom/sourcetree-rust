@@ -233,8 +233,13 @@ function App() {
           <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-primary/10 text-primary">
             v0.1.0
           </span>
+          {/* Tab 数量状态 */}
+          <span className="text-[10px] text-muted-foreground/60 border-l border-border pl-3 ml-1">
+            {tabs.length > 0 ? `${tabs.length} 个标签页` : "就绪"}
+          </span>
+          {/* 当前仓库路径 */}
           {currentPath && (
-            <span className="text-xs text-muted-foreground truncate max-w-[200px] hidden md:inline">
+            <span className="text-xs text-muted-foreground/60 truncate max-w-[200px] hidden md:inline">
               {currentPath}
             </span>
           )}
@@ -279,21 +284,9 @@ function App() {
       )}
 
       {/* ===== 内容区域 ===== */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {tabs.length > 0 && activeTabId ? <RepositoryPage /> : <WelcomePage />}
       </div>
-
-      {/* ===== 底部状态栏 ===== */}
-      <footer className="flex items-center justify-between px-4 py-1 border-t border-border bg-card text-[10px] text-muted-foreground shrink-0">
-        <span>
-          {tabs.length > 0
-            ? `${tabs.length} 个标签页`
-            : "就绪"}
-        </span>
-        <span>
-          {currentPath ?? "未打开仓库"}
-        </span>
-      </footer>
     </div>
   );
 }

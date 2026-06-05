@@ -354,12 +354,20 @@ impl GitService {
                 .unwrap_or_default();
             let time = commit.author().map(|a| a.time.seconds).unwrap_or(0);
 
+            // 提取父提交 ID
+            let parent_ids: Vec<String> = commit
+                .parent_ids()
+                .take(2) // 最多取 2 个父提交（普通提交、合并提交）
+                .map(|pid| pid.to_string()[..8.min(pid.to_string().len())].to_string())
+                .collect();
+
             commits.push(CommitEntry {
                 id: id[..8.min(id.len())].to_string(),
                 message: message.trim().to_string(),
                 author,
                 author_email,
                 time: time as i64,
+                parent_ids,
                 ref_names: Vec::new(),
             });
         }

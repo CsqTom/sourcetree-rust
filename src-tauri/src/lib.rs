@@ -37,8 +37,25 @@ pub fn run() {
             // 分支
             commands::status::list_branches,
             commands::status::get_current_branch,
-            // 仓库摘要
             commands::status::get_repo_summary,
+            commands::status::get_commit_files,
+            commands::status::get_commit_diff,
+            commands::status::get_commit_file_diff,
+            // 分支管理
+            commands::branch::create_branch,
+            commands::branch::checkout_branch,
+            commands::branch::checkout_new_branch,
+            commands::branch::delete_branch,
+            // 远程操作
+            commands::remote::fetch_remote,
+            commands::remote::pull_remote,
+            commands::remote::push_remote,
+            commands::remote::clone_repo,
+            commands::remote::init_repo,
+            commands::remote::list_remotes,
+            commands::remote::add_remote,
+            commands::remote::remove_remote,
+            commands::remote::set_remote_url,
         ])
         .run(tauri::generate_context!())
         .expect("启动应用失败");

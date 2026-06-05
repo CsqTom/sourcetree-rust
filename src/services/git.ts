@@ -33,6 +33,8 @@ export interface CommitEntry {
   author: string;
   author_email: string;
   time: number;
+  /** 父提交 ID 列表（用于 DAG 图） */
+  parent_ids: string[];
   ref_names: string[];
 }
 
@@ -144,4 +146,138 @@ export async function getCurrentBranch(
   repoPath: string
 ): Promise<string> {
   return invoke<string>("get_current_branch", { repoPath });
+}
+
+// ===== 分支管理命令 =====
+
+/** 创建分支 */
+export async function createBranch(
+  repoPath: string,
+  branchName: string
+): Promise<string> {
+  return invoke<string>("create_branch", { repoPath, branchName });
+}
+
+/** 切换分支 */
+export async function checkoutBranch(
+  repoPath: string,
+  branchName: string
+): Promise<string> {
+  return invoke<string>("checkout_branch", { repoPath, branchName });
+}
+
+/** 创建并切换到新分支 */
+export async function checkoutNewBranch(
+  repoPath: string,
+  branchName: string
+): Promise<string> {
+  return invoke<string>("checkout_new_branch", { repoPath, branchName });
+}
+
+/** 删除分支 */
+export async function deleteBranch(
+  repoPath: string,
+  branchName: string,
+  force = false
+): Promise<string> {
+  return invoke<string>("delete_branch", { repoPath, branchName, force });
+}
+
+// ===== 远程操作命令 =====
+
+/** Fetch 远程更新 */
+export async function fetchRemote(
+  repoPath: string,
+  remote?: string
+): Promise<string> {
+  return invoke<string>("fetch_remote", { repoPath, remote });
+}
+
+/** Pull 拉取并合并 */
+export async function pullRemote(
+  repoPath: string,
+  remote?: string,
+  branch?: string
+): Promise<string> {
+  return invoke<string>("pull_remote", { repoPath, remote, branch });
+}
+
+/** Push 推送到远程 */
+export async function pushRemote(
+  repoPath: string,
+  remote?: string,
+  branch?: string,
+  setUpstream = false
+): Promise<string> {
+  return invoke<string>("push_remote", { repoPath, remote, branch, setUpstream });
+}
+
+/** 克隆仓库 */
+export async function cloneRepo(url: string, targetDir: string): Promise<string> {
+  return invoke<string>("clone_repo", { url, targetDir });
+}
+
+/** 初始化仓库 */
+export async function initRepo(path: string, bare = false): Promise<string> {
+  return invoke<string>("init_repo", { path, bare });
+}
+
+/** 获取远程仓库列表 */
+export async function listRemotes(
+  repoPath: string
+): Promise<{ name: string; fetch_url: string | null; push_url: string | null }[]> {
+  return invoke("list_remotes", { repoPath });
+}
+
+/** 添加远程仓库 */
+export async function addRemote(
+  repoPath: string,
+  name: string,
+  url: string
+): Promise<string> {
+  return invoke<string>("add_remote", { repoPath, name, url });
+}
+
+/** 删除远程仓库 */
+export async function removeRemote(
+  repoPath: string,
+  name: string
+): Promise<string> {
+  return invoke<string>("remove_remote", { repoPath, name });
+}
+
+/** 修改远程仓库 URL */
+export async function setRemoteUrl(
+  repoPath: string,
+  name: string,
+  url: string
+): Promise<string> {
+  return invoke<string>("set_remote_url", { repoPath, name, url });
+}
+
+// ===== 提交详情命令 =====
+
+/** 获取单次提交的变更文件列表 */
+export async function getCommitFiles(
+  repoPath: string,
+  commitId: string
+): Promise<{ status: string; path: string }[]> {
+  return invoke("get_commit_files", { repoPath, commitId });
+}
+
+/** 获取单次提交的差异 */
+export async function getCommitDiff(
+  repoPath: string,
+  commitId: string
+): Promise<string> {
+  return invoke<string>("get_commit_diff", { repoPath, commitId });
+}
+
+/** 获取某次提交中单个文件的变更内容 */
+export async function getCommitFileDiff(
+  repoPath: string,
+  commitId: string,
+  filePath: string
+): Promise<string> {
+  return invoke<string>("get_commit_file_diff", { repoPath, commitId, filePath });
 }

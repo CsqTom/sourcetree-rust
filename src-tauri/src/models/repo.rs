@@ -36,6 +36,8 @@ pub struct CommitEntry {
     pub author_email: String,
     /// 提交时间（Unix 时间戳）
     pub time: i64,
+    /// 父提交 ID 列表（用于构建 DAG 图）
+    pub parent_ids: Vec<String>,
     /// 关联分支名列表
     pub ref_names: Vec<String>,
 }
