@@ -1,0 +1,37 @@
+[package]
+name = "sourcetree-rust"
+version = "0.1.0"
+description = "A Git GUI client built with Tauri 2 + gix"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "sourcetree_rust_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+thiserror = "2"
+
+# Git 操作 - gix (gitoxide) 纯 Rust 实现
+gix = { version = "0.70", features = [
+    "async-network-client",
+] }
+
+# 检测系统 Git CLI（用于回退方案）
+which = "7"
+
+# 日志
+log = "0.4"
+env_logger = "0.11"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
