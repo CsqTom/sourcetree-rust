@@ -46,3 +46,41 @@ pub fn get_repo_info(state: State<AppState>) -> Result<serde_json::Value, String
         "theme": app_state.theme,
     }))
 }
+
+/// 验证路径是否为有效的 Git 仓库
+#[tauri::command]
+pub fn validate_repo_path(path: String) -> Result<serde_json::Value, String> {
+    use std::path::Path;
+
+    let p = Path::new(&path);
+
+    // 检查路径是否存在
+    if !p.exists() {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "error": "目录不存在"
+        }));
+    }
+    if !p.is_dir() {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "error": "路径不是目录"
+        }));
+    }
+
+    // 尝试以 Git 仓库打开
+    match gix::open(&path) {
+        Ok(repo) => {
+            let is_bare = repo.is_bare();
+            Ok(serde_json::json!({
+                "valid": true,
+                "is_bare": is_bare,
+                "error": null
+            }))
+        }
+        Err(e) => Ok(serde_json::json!({
+            "valid": false,
+            "error": format!("不是有效的 Git 仓库: {}", e)
+        })),
+    }
+}
