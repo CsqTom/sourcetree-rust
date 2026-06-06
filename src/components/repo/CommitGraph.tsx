@@ -1,11 +1,24 @@
 /**
  * 提交图 DAG 可视化组件
  *
- * 将提交列表渲染为带分支着色的 DAG 图（类似 git log --graph 的图形化版本）
- * 每个提交条目左侧显示小 SVG 图，包含：
- * - 分支连接线（竖线，不同分支不同颜色）
- * - 提交节点（彩色圆点）
- * - 合并/分叉连接线
+ * 参考 pvigier 的 Commit Graph Drawing Algorithms 实现
+ * (https://pvigier.github.io/2019/05/06/commit-graph-drawing-algorithms.html)
+ *
+ * 核心思路：
+ * 1. 预计算 children 关系（从 parents 反推）
+ * 2. 区分 branchChildren（child.parents[0] === commit）和 mergeChildren
+ * 3. 从最新→最旧遍历，维护活跃分支列表 B，确定每个提交的列号 j
+ * 4. 计算每个提交到父提交的连线（向下）和子提交到此提交的连线（向上）
+ *
+ * 渲染策略（每行 SVG 独立，高度 ROW_H）：
+ * - 竖线：活跃分支列从 y=0 到 y=ROW_H
+ * - 子连线（向上）：从子提交到此提交的跨列连线
+ *   - 同列：竖线已覆盖
+ *   - 跨列：从 (fromCx, 0) 贝塞尔曲线到 (toCx, MID_Y)
+ * - 父连线（向下）：从此提交到父提交的跨列连线
+ *   - 同列：竖线已覆盖
+ *   - 跨列：从 (fromCx, MID_Y) 贝塞尔曲线到 (toCx, ROW_H)
+ * - 提交节点：在 (col, MID_Y) 处画圆
  */
 
 import { useMemo } from "react";
@@ -25,125 +38,259 @@ const BRANCH_COLORS = [
   "#E91E63", // 粉
 ];
 
-// ===== 每列的图数据 =====
-interface RowGraph {
-  /** 此提交节点所在的列索引 */
-  col: number;
-  /** 所有活跃列的索引和颜色 */
-  columns: { idx: number; color: string }[];
-  /** 连接：从此提交到特定父提交列的连线 */
-  connections: { fromCol: number; toCol: number }[];
+// ===== 提交的子提交信息 =====
+interface CommitChildren {
+  /** branchChildren：此提交是 child 的第一父提交（延续分支） */
+  branch: string[];
+  /** mergeChildren：此提交是 child 的非第一父提交（合并入分支） */
+  merge: string[];
 }
 
-// ===== 列状态 =====
-interface ColState {
-  tip: string;
+// ===== 图连线 =====
+interface GraphEdge {
+  /** 起点列号 */
+  fromCol: number;
+  /** 终点列号 */
+  toCol: number;
+  /** 连线类型：branch=延续分支, merge=合并 */
+  type: "branch" | "merge";
+  /** 连线颜色 */
   color: string;
 }
 
+// ===== 合并线隔行延续 =====
+interface MergePassThrough {
+  /** 需要延续竖线的列号（即合并线终点的列） */
+  col: number;
+  /** 颜色 */
+  color: string;
+}
+
+// ===== 每行的图渲染数据 =====
+interface RowGraph {
+  /** 此提交所在的列号 */
+  col: number;
+  /** 活跃分支列表（null 表示该列空闲） */
+  branches: (string | null)[];
+  /** 子连线：从子提交到此提交的跨列连线（从顶部到 MID_Y） */
+  childEdges: GraphEdge[];
+  /** 父连线：从此提交到父提交的跨列连线（从 MID_Y 到底部） */
+  parentEdges: GraphEdge[];
+  /** 合并线隔行延续：中间行的竖线，承载合并线跨越多行 */
+  mergePassThroughs: MergePassThrough[];
+}
+
 /**
- * 从提交列表构建 DAG 图结构
- *
- * 算法说明（与 git log --graph 类似）：
- * 1. 维护一组活跃的"列"（每个列代表一条正在进行的分支线）
- * 2. 遍历提交列表（从最新到最旧），每个提交占据一个列
- * 3. 第一个父提交继承该列，其他父提交创建新列
- * 4. 已处理的提交从活跃列中移除
+ * 预计算每个提交的 children 关系
  */
-function buildGraph(commits: CommitEntry[]): RowGraph[] {
-  const rows: RowGraph[] = [];
-  const cols: ColState[] = [];
-  let colorIdx = 0;
+function computeChildren(
+  commits: CommitEntry[]
+): Map<string, CommitChildren> {
+  const result = new Map<string, CommitChildren>();
 
-  /** 获取下一个分支颜色 */
-  const nextColor = () => BRANCH_COLORS[colorIdx++ % BRANCH_COLORS.length];
+  for (const c of commits) {
+    result.set(c.id, { branch: [], merge: [] });
+  }
 
-  /** 提交 ID → 颜色缓存 */
-  const colorCache = new Map<string, string>();
-
-  for (const commit of commits) {
-    // 阶段 1：找到此提交在列中的位置
-    let colIdx = cols.findIndex((c) => c.tip === commit.id);
-
-    if (colIdx === -1) {
-      // 新提交：分配颜色，在父提交所在列之后插入
-      const color = colorCache.get(commit.id) ?? nextColor();
-      colorCache.set(commit.id, color);
-
-      let insertAfter = -1;
-      for (const pid of commit.parent_ids) {
-        const pc = cols.findIndex((c) => c.tip === pid);
-        if (pc >= 0 && pc > insertAfter) insertAfter = pc;
-      }
-      cols.splice(insertAfter + 1, 0, {
-        tip: commit.id,
-        color,
-      });
-      colIdx = insertAfter + 1;
-    }
-
-    const commitColor = cols[colIdx].color;
-
-    // 阶段 2：收集此行所有活跃列
-    const activeCols = cols.map((c, i) => ({ idx: i, color: c.color }));
-
-    // 阶段 3：确定连线（到父提交的跨列连接）
-    const connections: { fromCol: number; toCol: number }[] = [];
-    for (const pid of commit.parent_ids) {
-      const pc = cols.findIndex((c) => c.tip === pid);
-      if (pc >= 0 && pc !== colIdx) {
-        connections.push({ fromCol: colIdx, toCol: pc });
-      }
-    }
-
-    rows.push({ col: colIdx, columns: activeCols, connections });
-
-    // 阶段 4：更新列状态
-    cols.splice(colIdx, 1); // 移除此提交
-
-    // 已被其他列跟踪的父提交 ID 集合（避免重复插入）
-    const trackedParents = new Set(cols.map((c) => c.tip));
-
-    // 逆序处理父提交，确保第一个父提交占据刚释放的列位置
-    const parents = [...commit.parent_ids];
-    for (let i = parents.length - 1; i >= 0; i--) {
-      const pid = parents[i];
-      // ★ 关键修复：若父提交已被其他列跟踪，不再重复插入
-      if (trackedParents.has(pid)) continue;
-
+  for (const c of commits) {
+    for (let i = 0; i < c.parent_ids.length; i++) {
+      const pid = c.parent_ids[i];
+      const parent = result.get(pid);
+      if (!parent) continue;
       if (i === 0) {
-        // 第一个父提交继承此列位置和颜色（主线延续）
-        const color = colorCache.get(pid) ?? commitColor;
-        colorCache.set(pid, color);
-        cols.splice(colIdx, 0, { tip: pid, color });
+        parent.branch.push(c.id);
       } else {
-        // 其他父提交追加为新列（分叉分支）
-        const color = colorCache.get(pid) ?? nextColor();
-        colorCache.set(pid, color);
-        cols.push({ tip: pid, color });
-      }
-    }
-
-    // 清理孤儿列（其 tip 不在后续提交中出现）
-    const futureIds = new Set(
-      commits.slice(rows.length).flatMap((c) => [c.id, ...c.parent_ids])
-    );
-    for (let i = cols.length - 1; i >= 0; i--) {
-      if (!futureIds.has(cols[i].tip)) {
-        cols.splice(i, 1);
+        parent.merge.push(c.id);
       }
     }
   }
 
-  return rows;
+  return result;
+}
+
+/**
+ * 构建 DAG 图结构
+ *
+ * 参考 pvigier 的 curved_branches 算法，从最新→最旧遍历提交，
+ * 保证子提交（更新的）先分配列号，父提交替换子提交位置，实现同一分支连续。
+ *
+ * 遍历方向说明：
+ * - 从最新→最旧（commits 原始顺序），因为每个提交需要查找其 children 的列号，
+ *   而 children 是更新的提交，在数组中排在前面，已经处理过。
+ * - 若从最旧→最新遍历，子提交尚未分配列号，父提交找不到替换目标，会创建新列。
+ */
+function buildGraph(commits: CommitEntry[]): RowGraph[] {
+  if (commits.length === 0) return [];
+
+  const childrenMap = computeChildren(commits);
+
+  // 提交 ID → 列号映射
+  const colMap = new Map<string, number>();
+
+  // 颜色分配
+  let colorIdx = 0;
+  const nextColor = () => BRANCH_COLORS[colorIdx++ % BRANCH_COLORS.length];
+  const colorMap = new Map<string, string>();
+
+  // 活跃分支列表 B：B[j] = commitId | null
+  const B: (string | null)[] = [];
+
+  // 结果：按原始提交顺序（最新→最旧）存储
+  const rowsMap = new Map<string, RowGraph>();
+
+  // ===== 第一遍：分配列号（最新→最旧） =====
+  for (const commit of commits) {
+    const ch = childrenMap.get(commit.id)!;
+
+    // 选择一个 branchChild 来替换（优先选最左边的）
+    let replaceChild: string | null = null;
+    let replaceIdx = -1;
+
+    for (const childId of ch.branch) {
+      const childCol = colMap.get(childId);
+      if (childCol !== undefined) {
+        if (replaceIdx === -1 || childCol < replaceIdx) {
+          replaceChild = childId;
+          replaceIdx = childCol;
+        }
+      }
+    }
+
+    if (replaceChild !== null) {
+      // 延续分支：替换子提交在该列的位置
+      B[replaceIdx] = commit.id;
+      colMap.set(commit.id, replaceIdx);
+      const childColor = colorMap.get(replaceChild);
+      colorMap.set(commit.id, childColor ?? nextColor());
+    } else {
+      // 新分支：找空位或追加
+      const nilIdx = B.indexOf(null);
+      if (nilIdx !== -1) {
+        B[nilIdx] = commit.id;
+        colMap.set(commit.id, nilIdx);
+      } else {
+        B.push(commit.id);
+        colMap.set(commit.id, B.length - 1);
+      }
+      colorMap.set(commit.id, nextColor());
+    }
+
+    // 移除未选中的 branchChildren（其分支在此结束）
+    for (const childId of ch.branch) {
+      if (childId === replaceChild) continue;
+      const childCol = colMap.get(childId);
+      if (childCol !== undefined && B[childCol] === childId) {
+        B[childCol] = null;
+      }
+    }
+
+    rowsMap.set(commit.id, {
+      col: colMap.get(commit.id)!,
+      branches: [...B],
+      childEdges: [],
+      parentEdges: [],
+      mergePassThroughs: [],
+    });
+  }
+
+  // ===== 第二遍：计算每个提交的子提交到此提交的跨列连线（向上） =====
+  for (const commit of commits) {
+    const commitCol = colMap.get(commit.id)!;
+    const childEdges: GraphEdge[] = [];
+    const ch = childrenMap.get(commit.id)!;
+
+    // 处理所有分支子提交
+    for (const childId of ch.branch) {
+      const childCol = colMap.get(childId);
+      if (childCol !== undefined && childCol !== commitCol) {
+        childEdges.push({
+          fromCol: childCol,
+          toCol: commitCol,
+          type: "branch",
+          color: BRANCH_COLORS[childCol % BRANCH_COLORS.length],
+        });
+      }
+    }
+
+    // 处理所有合并子提交
+    for (const childId of ch.merge) {
+      const childCol = colMap.get(childId);
+      if (childCol !== undefined && childCol !== commitCol) {
+        childEdges.push({
+          fromCol: childCol,
+          toCol: commitCol,
+          type: "merge",
+          color: BRANCH_COLORS[childCol % BRANCH_COLORS.length],
+        });
+      }
+    }
+
+    rowsMap.get(commit.id)!.childEdges = childEdges;
+  }
+
+  // ===== 第三遍：计算每个提交到父提交的跨列连线（向下）以及合并线隔行延续 =====
+  // 先构建提交 ID → 索引映射，用于查找隔行范围
+  const commitIndexMap = new Map<string, number>();
+  commits.forEach((c, i) => commitIndexMap.set(c.id, i));
+
+  for (const commit of commits) {
+    const commitCol = colMap.get(commit.id)!;
+    const parentEdges: GraphEdge[] = [];
+    const curRow = rowsMap.get(commit.id)!;
+
+    for (let i = 0; i < commit.parent_ids.length; i++) {
+      const parentId = commit.parent_ids[i];
+      const parentCol = colMap.get(parentId);
+      if (parentCol !== undefined && parentCol !== commitCol) {
+        const edgeType = i === 0 ? "branch" : "merge";
+        parentEdges.push({
+          fromCol: commitCol,
+          toCol: parentCol,
+          type: edgeType,
+          color: BRANCH_COLORS[parentCol % BRANCH_COLORS.length],
+        });
+
+        // 合并线需在隔行补竖线延续
+        if (edgeType === "merge") {
+          const pIdx = commitIndexMap.get(parentId);
+          const cIdx = commitIndexMap.get(commit.id);
+          if (pIdx !== undefined && cIdx !== undefined && pIdx > cIdx + 1) {
+            for (let r = cIdx + 1; r < pIdx; r++) {
+              const row = rowsMap.get(commits[r].id);
+              if (row) {
+                // 避免重复添加同列延续
+                if (!row.mergePassThroughs.some((m) => m.col === parentCol)) {
+                  row.mergePassThroughs.push({
+                    col: parentCol,
+                    color: BRANCH_COLORS[parentCol % BRANCH_COLORS.length],
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    curRow.parentEdges = parentEdges;
+  }
+
+  // 按原始提交顺序（最新→最旧）输出
+  return commits.map((c) => {
+    const row = rowsMap.get(c.id);
+    if (!row) {
+      return { col: 0, branches: [c.id], childEdges: [], parentEdges: [], mergePassThroughs: [] };
+    }
+    return row;
+  });
 }
 
 // ===== SVG 渲染常量 =====
-const COL_W = 16; // 每列宽度
-const PAD = 4; // 左 padding
-const ROW_H = 28; // 行高（SVG 高度）
+const COL_W = 20;
+const PAD = 6;
+const ROW_H = 28;
 const MID_Y = ROW_H / 2;
-const DOT_R = 4; // 圆点半径
+const DOT_R = 4;
 
 interface CommitGraphProps {
   commits: CommitEntry[];
@@ -158,13 +305,20 @@ export default function CommitGraph({
   onSelect,
   currentBranch,
 }: CommitGraphProps) {
-  const graph = useMemo(() => buildGraph(commits), [commits]);
-  // 全局最大列数，保持所有行 SVG 宽度一致
+  // 1. 按时间逆序排列（从新到旧）
+  const sortedCommits = useMemo(
+    () => [...commits].sort((a, b) => b.time - a.time),
+    [commits]
+  );
+  const graph = useMemo(() => buildGraph(sortedCommits), [sortedCommits]);
   const maxCols = useMemo(
-    () => Math.max(1, ...graph.map((r) => Math.max(r.col + 1, r.columns.length))),
+    () => Math.max(1, ...graph.map((r) => Math.max(r.col + 1, r.branches.length))),
     [graph]
   );
   const svgW = maxCols * COL_W + PAD * 2;
+
+  /** 列号 → X 坐标 */
+  const colX = (col: number) => PAD + col * COL_W + COL_W / 2;
 
   return (
     <div className="overflow-y-auto min-h-0">
@@ -173,82 +327,127 @@ export default function CommitGraph({
           暂无提交历史
         </div>
       ) : (
-        commits.map((commit, idx) => {
+        sortedCommits.map((commit, idx) => {
           const row = graph[idx];
           const isSelected = commit.id === selectedId;
+
           return (
             <div
               key={commit.id}
               onClick={() => onSelect(commit)}
-              className={`flex cursor-pointer hover:bg-accent/30 border-b border-border ${
+              className={`relative flex cursor-pointer hover:bg-accent/30 border-b border-border ${
                 isSelected ? "bg-accent" : ""
               }`}
             >
-              {/* 左侧 SVG 图 */}
               <svg
                 width={svgW}
                 height={ROW_H}
                 viewBox={`0 0 ${svgW} ${ROW_H}`}
                 className="shrink-0"
               >
-                {/* 1. 竖线遍历所有活跃列 */}
-                {row.columns.map((col) => {
-                  const cx = PAD + col.idx * COL_W + COL_W / 2;
+                {/* 1. 竖线：活跃分支列（贯穿整行 y=0 → ROW_H） */}
+                {row.branches.map((bid, j) => {
+                  if (bid === null) return null;
+                  const cx = colX(j);
+                  const isThisCommit = bid === commit.id;
                   return (
                     <line
-                      key={`v-${col.idx}`}
+                      key={`v-${j}`}
                       x1={cx}
                       y1={0}
                       x2={cx}
                       y2={ROW_H}
-                      stroke={col.color}
-                      strokeWidth={2}
-                      opacity={col.idx === row.col ? 0.8 : 0.4}
+                      stroke={BRANCH_COLORS[j % BRANCH_COLORS.length]}
+                      strokeWidth={2.5}
+                      opacity={isThisCommit ? 1.0 : 0.75}
                     />
                   );
                 })}
 
-                {/* 2. 连线：从此提交到父提交（跨列的情况） */}
-                {row.connections.map((conn, ci) => {
-                  const fromCx = PAD + conn.fromCol * COL_W + COL_W / 2;
-                  const toCx = PAD + conn.toCol * COL_W + COL_W / 2;
-                  const color =
-                    row.columns.find((c) => c.idx === conn.toCol)?.color ??
-                    BRANCH_COLORS[conn.toCol % BRANCH_COLORS.length];
+                {/* 1b. 合并线隔行延续竖线：合并线需跨越的行，在终点列补竖线 */}
+                {row.mergePassThroughs.map((mt) => {
+                  // 避免与活跃分支竖线重复
+                  if (mt.col < row.branches.length && row.branches[mt.col] !== null) {
+                    return null;
+                  }
+                  const cx = colX(mt.col);
                   return (
-                    <g key={`conn-${ci}`}>
-                      {/* 水平线 */}
-                      <line
-                        x1={fromCx}
-                        y1={MID_Y}
-                        x2={toCx}
-                        y2={MID_Y}
-                        stroke={color}
-                        strokeWidth={2}
-                      />
-                      {/* 从水平线端点向下 */}
-                      <line
-                        x1={toCx}
-                        y1={MID_Y}
-                        x2={toCx}
-                        y2={ROW_H}
-                        stroke={color}
-                        strokeWidth={2}
-                      />
-                    </g>
+                    <line
+                      key={`mt-${mt.col}`}
+                      x1={cx}
+                      y1={0}
+                      x2={cx}
+                      y2={ROW_H}
+                      stroke={mt.color}
+                      strokeWidth={2.5}
+                      opacity={0.75}
+                    />
                   );
                 })}
 
-                {/* 3. 提交节点（圆点） */}
-                {(() => {
-                  const cx = PAD + row.col * COL_W + COL_W / 2;
-                  const color =
-                    row.columns.find((c) => c.idx === row.col)?.color ??
-                    BRANCH_COLORS[row.col % BRANCH_COLORS.length];
+                {/* 2. 子连线（向上）：从子提交到此提交的跨列连线
+                    仅分支延续（type=branch）在父行绘制
+                    合并线（type=merge）在子行绘制，不在父行重复画 */}
+                {row.childEdges
+                  .filter((e) => e.type === "branch")
+                  .map((edge, ei) => {
+                  if (edge.fromCol === edge.toCol) return null;
 
-                  const isMerge = row.connections.length > 0;
-                  return isMerge ? (
-                    // 合并提交用稍大的圆
+                  const fromCx = colX(edge.fromCol);
+                  const toCx = colX(edge.toCol);
+
+                  // 先垂直走 35% 高度，再平滑弯曲到目标列
+                  const vertPct = 0.35;
+                  const vertEnd = MID_Y * vertPct;
+                  const curveStart = vertEnd + 1;
+                  const cp1y = curveStart + (MID_Y - curveStart) * 0.4;
+                  const cp2y = curveStart + (MID_Y - curveStart) * 0.6;
+
+                  return (
+                    <path
+                      key={`ce-${ei}`}
+                      d={`M ${fromCx} 0 L ${fromCx} ${vertEnd} C ${fromCx} ${cp1y}, ${toCx} ${cp2y}, ${toCx} ${MID_Y}`}
+                      stroke={edge.color}
+                      strokeWidth={2}
+                      fill="none"
+                    />
+                  );
+                })}
+
+                {/* 3. 父连线（向下）：仅合并时在子提交行绘制
+                    分支延续（type=branch）由竖线覆盖，不在子行画 */}
+                {row.parentEdges
+                  .filter((e) => e.type === "merge")
+                  .map((edge, ei) => {
+                    if (edge.fromCol === edge.toCol) return null;
+
+                    const fromCx = colX(edge.fromCol);
+                    const toCx = colX(edge.toCol);
+
+                    // 从 (fromCx, MID_Y) 贝塞尔曲线到 (toCx, ROW_H)
+                    const cp1y = MID_Y + (ROW_H - MID_Y) * 0.55;
+                    const cp2y = MID_Y + (ROW_H - MID_Y) * 0.45;
+
+                    return (
+                      <path
+                        key={`pe-${ei}`}
+                        d={`M ${fromCx} ${MID_Y} C ${fromCx} ${cp1y}, ${toCx} ${cp2y}, ${toCx} ${ROW_H}`}
+                        stroke={edge.color}
+                        strokeWidth={2}
+                        fill="none"
+                      />
+                    );
+                  })}
+
+                {/* 4. 提交节点（圆点） */}
+                {(() => {
+                  const cx = colX(row.col);
+                  const color = BRANCH_COLORS[row.col % BRANCH_COLORS.length];
+                  const hasMerge = [...row.childEdges, ...row.parentEdges].some(
+                    (e) => e.type === "merge"
+                  );
+
+                  return hasMerge ? (
                     <>
                       <circle
                         cx={cx}
@@ -279,9 +478,11 @@ export default function CommitGraph({
                 })()}
               </svg>
 
-              {/* 右侧提交信息 — 一行布局：tags 提交说明 日期 SHA */}
+              {/* 行分隔线：每行底部淡灰线 */}
+              <div className="absolute bottom-0 left-0 right-0 h-px bg-border/40" />
+
+              {/* 右侧提交信息 */}
               <div className="flex-1 px-2 py-2 min-w-0 flex items-center gap-2 text-xs">
-                {/* tags */}
                 {commit.ref_names.length > 0 && (
                   <span className="flex gap-0.5 shrink-0">
                     {commit.ref_names.map((ref) => (
@@ -300,15 +501,12 @@ export default function CommitGraph({
                     ))}
                   </span>
                 )}
-                {/* 提交说明（60% 空间） */}
                 <span className="truncate font-medium flex-1 min-w-0">
                   {commit.message}
                 </span>
-                {/* 日期 */}
                 <span className="text-muted-foreground shrink-0">
                   {new Date(commit.time * 1000).toLocaleString()}
                 </span>
-                {/* SHA */}
                 <span className="font-mono text-muted-foreground shrink-0">
                   {commit.id.slice(0, 7)}
                 </span>
