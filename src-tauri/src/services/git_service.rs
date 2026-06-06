@@ -7,7 +7,7 @@ use anyhow::Result;
 use gix::bstr::BString;
 
 use crate::models::diff::{ChangeStatus, FileStatus};
-use crate::models::repo::{CommitEntry, RepoSummary};
+use crate::models::repo::{CommitEntry, RefInfo, RepoSummary};
 
 /// Git 核心服务
 pub struct GitService;
@@ -328,18 +328,30 @@ impl GitService {
 
     /// 获取最近的提交列表
     pub fn recent_commits(repo: &gix::Repository, max_count: usize) -> Result<Vec<CommitEntry>> {
+        Self::older_commits(repo, max_count, 0)
+    }
+
+    /// 获取更早的提交（跳过 offset 个最新提交）
+    pub fn older_commits(
+        repo: &gix::Repository,
+        max_count: usize,
+        offset: usize,
+    ) -> Result<Vec<CommitEntry>> {
         let mut commits = Vec::new();
 
         let head_id = repo.head_id()?;
         let walk = repo.rev_walk(vec![head_id]);
-        let iter = walk.all()?.take(max_count);
+        let iter = walk.all()?.skip(offset).take(max_count);
+
+        // 构建提交 → 引用名映射（标签、分支）
+        let workdir = Self::work_dir(repo)?;
+        let ref_map = Self::build_ref_map(workdir.to_str().unwrap_or(""))?;
 
         for result in iter {
             let info = result?;
             let commit = info.object()?;
 
             let id = info.id.to_string();
-            // MessageRef 使用 title 字段获取提交信息标题
             let message = commit
                 .message()
                 .map(|m| m.title.to_string())
@@ -353,26 +365,112 @@ impl GitService {
                 .map(|a| a.email.to_string())
                 .unwrap_or_default();
             let time = commit.author().map(|a| a.time.seconds).unwrap_or(0);
+            let committer = commit
+                .committer()
+                .map(|c| c.name.to_string())
+                .unwrap_or_default();
+            let committer_email = commit
+                .committer()
+                .map(|c| c.email.to_string())
+                .unwrap_or_default();
 
-            // 提取父提交 ID
             let parent_ids: Vec<String> = commit
                 .parent_ids()
-                .take(2) // 最多取 2 个父提交（普通提交、合并提交）
-                .map(|pid| pid.to_string()[..8.min(pid.to_string().len())].to_string())
+                .map(|pid| pid.to_string())
                 .collect();
 
+            let refs = ref_map.get(&id).cloned().unwrap_or_default();
+
             commits.push(CommitEntry {
-                id: id[..8.min(id.len())].to_string(),
+                id,
                 message: message.trim().to_string(),
                 author,
                 author_email,
                 time: time as i64,
+                committer,
+                committer_email,
                 parent_ids,
-                ref_names: Vec::new(),
+                refs,
             });
         }
 
         Ok(commits)
+    }
+
+    /// 构建提交 SHA → 引用列表的映射（标签 + 分支）
+    fn build_ref_map(workdir: &str) -> Result<std::collections::HashMap<String, Vec<RefInfo>>> {
+        use std::collections::HashMap;
+        use std::process::Command;
+
+        let mut map: HashMap<String, Vec<RefInfo>> = HashMap::new();
+
+        // 先处理分支（refs/heads/）
+        let output_heads = Command::new("git")
+            .arg("-C")
+            .arg(workdir)
+            .args([
+                "for-each-ref",
+                "--format=%(refname:short)%00%(objectname)",
+                "refs/heads/",
+            ])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git for-each-ref heads 失败: {}", e))?;
+
+        if output_heads.status.success() {
+            let stdout = String::from_utf8_lossy(&output_heads.stdout);
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.is_empty() { continue; }
+                let parts: Vec<&str> = line.split('\0').collect();
+                if parts.len() < 2 { continue; }
+                let name = parts[0].trim().to_string();
+                let commit_id = parts[1].trim();
+                if name.is_empty() || commit_id.is_empty() { continue; }
+                map.entry(commit_id.to_string())
+                    .or_default()
+                    .push(RefInfo { name, kind: "head".to_string() });
+            }
+        }
+
+        // 再处理标签（refs/tags/），区分轻量标签和附注标签
+        let output_tags = Command::new("git")
+            .arg("-C")
+            .arg(workdir)
+            .args([
+                "for-each-ref",
+                "--format=%(refname:short)%00%(objectname)%00%(*objectname)",
+                "refs/tags/",
+            ])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git for-each-ref tags 失败: {}", e))?;
+
+        if output_tags.status.success() {
+            let stdout = String::from_utf8_lossy(&output_tags.stdout);
+            for line in stdout.lines() {
+                let line = line.trim();
+                if line.is_empty() { continue; }
+                let parts: Vec<&str> = line.split('\0').collect();
+                if parts.len() < 2 { continue; }
+                let name = parts[0].trim().to_string();
+                if name.is_empty() { continue; }
+                // 第三列为空 → 轻量标签，非空 → 附注标签（去皮后的提交 SHA）
+                let commit_id = if parts.len() >= 3 && !parts[2].is_empty() {
+                    parts[2].trim()
+                } else {
+                    parts[1].trim()
+                };
+                let kind = if parts.len() >= 3 && !parts[2].is_empty() {
+                    "annotated_tag"
+                } else {
+                    "tag"
+                };
+                map.entry(commit_id.to_string())
+                    .or_default()
+                    .push(RefInfo { name, kind: kind.to_string() });
+            }
+        }
+
+        Ok(map)
     }
 
     /// 检查 gix 是否可用

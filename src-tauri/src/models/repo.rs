@@ -23,10 +23,19 @@ pub struct RepoSummary {
     pub behind: i32,
 }
 
+/// 引用信息（分支或标签）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefInfo {
+    /// 引用名（如 "main"、"v1.0"）
+    pub name: String,
+    /// 引用类型：head（分支）、tag（轻量标签）、annotated_tag（附注标签）
+    pub kind: String,
+}
+
 /// 提交历史条目（列表用）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommitEntry {
-    /// 提交 SHA
+    /// 提交 SHA（完整）
     pub id: String,
     /// 提交信息（完整）
     pub message: String,
@@ -36,10 +45,14 @@ pub struct CommitEntry {
     pub author_email: String,
     /// 提交时间（Unix 时间戳）
     pub time: i64,
-    /// 父提交 ID 列表（用于构建 DAG 图）
+    /// 提交者名
+    pub committer: String,
+    /// 提交者邮箱
+    pub committer_email: String,
+    /// 父提交 ID 列表（完整，用于构建 DAG 图）
     pub parent_ids: Vec<String>,
-    /// 关联分支名列表
-    pub ref_names: Vec<String>,
+    /// 关联引用列表
+    pub refs: Vec<RefInfo>,
 }
 
 /// 书签条目

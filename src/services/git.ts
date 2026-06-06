@@ -27,15 +27,28 @@ export interface RepoSummary {
   behind: number;
 }
 
+/** 引用信息（分支或标签） */
+export interface RefInfo {
+  /** 引用名（如 "main"、"v1.0"） */
+  name: string;
+  /** 引用类型：head（分支）、tag（轻量标签）、annotated_tag（附注标签） */
+  kind: string;
+}
+
 export interface CommitEntry {
   id: string;
   message: string;
   author: string;
   author_email: string;
   time: number;
+  /** 提交者名 */
+  committer: string;
+  /** 提交者邮箱 */
+  committer_email: string;
   /** 父提交 ID 列表（用于 DAG 图） */
   parent_ids: string[];
-  ref_names: string[];
+  /** 关联引用列表 */
+  refs: RefInfo[];
 }
 
 // ===== 基础命令 =====
@@ -132,6 +145,15 @@ export async function getRecentCommits(
   repoPath: string
 ): Promise<CommitEntry[]> {
   return invoke<CommitEntry[]>("get_recent_commits", { repoPath });
+}
+
+/** 获取更早的提交（分页加载） */
+export async function getOlderCommits(
+  repoPath: string,
+  maxCount: number,
+  offset: number,
+): Promise<CommitEntry[]> {
+  return invoke<CommitEntry[]>("get_older_commits", { repoPath, maxCount, offset });
 }
 
 // ===== 分支命令 =====

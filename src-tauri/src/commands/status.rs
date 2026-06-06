@@ -50,6 +50,18 @@ pub fn get_recent_commits(repo_path: String) -> Result<Vec<crate::models::repo::
     Ok(commits)
 }
 
+/// 获取更早的提交（分页加载）
+#[tauri::command]
+pub fn get_older_commits(
+    repo_path: String,
+    max_count: usize,
+    offset: usize,
+) -> Result<Vec<crate::models::repo::CommitEntry>, String> {
+    let repo = GitService::open(&repo_path).map_err(|e| e.to_string())?;
+    let commits = GitService::older_commits(&repo, max_count, offset).map_err(|e| e.to_string())?;
+    Ok(commits)
+}
+
 /// 提交变更
 #[tauri::command]
 pub fn commit_changes(repo_path: String, message: String) -> Result<String, String> {
@@ -83,7 +95,7 @@ pub fn get_commit_files(repo_path: String, commit_id: String) -> Result<Vec<serd
     use std::process::Command;
 
     let output = Command::new("git")
-        .args(["diff-tree", "--no-commit-id", "--name-status", "-r", &commit_id])
+        .args(["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_id])
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("执行 git diff-tree 失败: {}", e))?;

@@ -34,6 +34,7 @@ pub fn run() {
             // 提交
             commands::status::commit_changes,
             commands::status::get_recent_commits,
+            commands::status::get_older_commits,
             // 分支
             commands::status::list_branches,
             commands::status::get_current_branch,

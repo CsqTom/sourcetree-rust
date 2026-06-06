@@ -16,6 +16,7 @@ import {
   getFileDiff,
   commitChanges,
   getRecentCommits,
+  getOlderCommits,
   listBranches,
   checkoutBranch,
   fetchRemote,
@@ -73,12 +74,18 @@ export default function RepositoryPage() {
   );
   const [commitFileDiff, setCommitFileDiff] = useState<string>("");
 
+  // 分页加载
+  const PAGE_SIZE = 50;
+  const [commitOffset, setCommitOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const repoPath = currentPath || "";
 
   /** 刷新所有数据 */
   const refreshAll = useCallback(async () => {
     if (!repoPath) return;
     setLoading(true);
+    setCommitOffset(0);
     try {
       const [statusData, summaryData, commitData, branchData] =
         await Promise.all([
@@ -247,6 +254,24 @@ export default function RepositoryPage() {
       setCommitFileDiff("无法加载文件变更");
     }
   };
+
+  /** 加载更多提交历史 */
+  const loadMoreCommits = useCallback(async () => {
+    if (!repoPath || loadingMore) return;
+    setLoadingMore(true);
+    const newOffset = commitOffset + PAGE_SIZE;
+    try {
+      const olderCommits = await getOlderCommits(repoPath, PAGE_SIZE, newOffset);
+      if (olderCommits.length > 0) {
+        setCommits((prev) => [...prev, ...olderCommits]);
+        setCommitOffset(newOffset);
+      }
+    } catch (e) {
+      console.error("加载更多提交失败:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [repoPath, loadingMore, commitOffset]);
 
   /** 分类文件 */
   const stagedFiles = files.filter((f) => f.stage_status);
@@ -548,12 +573,13 @@ export default function RepositoryPage() {
           <HistoryPage
             commits={commits}
             selectedCommit={selectedCommit}
-            currentBranch={currentBranch || ""}
             commitFiles={commitFiles}
             selectedCommitFile={selectedCommitFile}
             commitFileDiff={commitFileDiff}
             onSelectCommit={loadCommitDetail}
             onSelectCommitFile={handleCommitFileSelect}
+            onLoadMore={loadMoreCommits}
+            loadingMore={loadingMore}
           />
         )}
         {activeNav === "workspace" && activeWorkspaceTab === "search" && (

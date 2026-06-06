@@ -33,7 +33,7 @@ function TabBar() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`
-              group flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer
+              group flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer
               border-r border-border select-none
               transition-colors
               ${isActive
@@ -223,7 +223,7 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col text-sm">
       {/* ===== 顶部标题栏 ===== */}
       <header className="flex items-center justify-between px-4 py-1.5 border-b border-border bg-card shrink-0">
         <div className="flex items-center gap-3">
@@ -239,7 +239,7 @@ function App() {
           </span>
           {/* 当前仓库路径 */}
           {currentPath && (
-            <span className="text-xs text-muted-foreground/60 truncate max-w-[200px] hidden md:inline">
+            <span className="text-sm text-muted-foreground/60 truncate max-w-[200px] hidden md:inline">
               {currentPath}
             </span>
           )}
@@ -248,7 +248,7 @@ function App() {
           {/* 新增仓库按钮 */}
           <button
             onClick={handleAddRepo}
-            className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="flex items-center gap-1 px-2 py-1 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             title="新增仓库"
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -256,7 +256,7 @@ function App() {
             </svg>
             <span className="hidden sm:inline">新增</span>
           </button>
-          <span className="text-xs text-muted-foreground">{backendMsg}</span>
+          <span className="text-sm text-muted-foreground">{backendMsg}</span>
           {backendInfo && (
             <span className="text-[10px] text-muted-foreground/60">
               {backendInfo}
@@ -264,7 +264,7 @@ function App() {
           )}
           <button
             onClick={toggleTheme}
-            className="px-2 py-1 text-xs rounded border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+            className="px-2 py-1 text-sm rounded border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             {theme === "light" ? "暗色" : "亮色"}
           </button>
@@ -276,7 +276,7 @@ function App() {
 
       {/* ===== 恢复失败提示 ===== */}
       {restoreErrors.length > 0 && (
-        <div className="mx-4 mt-2 p-2 rounded bg-destructive/10 border border-destructive/30 text-xs text-destructive space-y-0.5">
+        <div className="mx-4 mt-2 p-2 rounded bg-destructive/10 border border-destructive/30 text-sm text-destructive space-y-0.5">
           {restoreErrors.map((msg, i) => (
             <div key={i}>{msg}</div>
           ))}

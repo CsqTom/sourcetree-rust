@@ -19,6 +19,9 @@
  *   - 同列：竖线已覆盖
  *   - 跨列：从 (fromCx, MID_Y) 贝塞尔曲线到 (toCx, ROW_H)
  * - 提交节点：在 (col, MID_Y) 处画圆
+ * 绘制位置        分支线（type=branch）   合并线（type=merge）
+ * 父行 （子连线） ✅ 子列→垂直→弯到父节点  ❌ 不画 
+ * 子行 （父连线）  ❌ 不画                ✅ 从子节点→弯到父列底部
  */
 
 import { useMemo } from "react";
@@ -286,9 +289,9 @@ function buildGraph(commits: CommitEntry[]): RowGraph[] {
 }
 
 // ===== SVG 渲染常量 =====
-const COL_W = 20;
+const COL_W = 14;
 const PAD = 6;
-const ROW_H = 28;
+const ROW_H = 24;
 const MID_Y = ROW_H / 2;
 const DOT_R = 4;
 
@@ -296,14 +299,12 @@ interface CommitGraphProps {
   commits: CommitEntry[];
   selectedId: string | null;
   onSelect: (commit: CommitEntry) => void;
-  currentBranch: string;
 }
 
 export default function CommitGraph({
   commits,
   selectedId,
   onSelect,
-  currentBranch,
 }: CommitGraphProps) {
   // 1. 按时间逆序排列（从新到旧）
   const sortedCommits = useMemo(
@@ -322,12 +323,30 @@ export default function CommitGraph({
 
   return (
     <div className="overflow-y-auto min-h-0">
+      {/* 选中行样式：蓝色背景 + 白色文字 */}
+      <style>{`
+        .row-selected { background-color: #2563eb !important; }
+        .row-selected .cmt-text,
+        .row-selected .cmt-meta { color: white !important; }
+      `}</style>
       {graph.length === 0 ? (
-        <div className="px-3 py-8 text-xs text-muted-foreground text-center">
+        <div className="px-3 py-8 text-sm text-muted-foreground text-center">
           暂无提交历史
         </div>
       ) : (
-        sortedCommits.map((commit, idx) => {
+        <>
+          {/* 列表标题行 */}
+          <div className="sticky top-0 z-10 flex border-b border-border bg-muted/80 backdrop-blur text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            <div style={{ width: svgW }} className="shrink-0" />
+            <div className="flex-1 flex items-center gap-2 px-2 py-1.5 min-w-0">
+              <span className="flex-1 min-w-0">提交说明</span>
+              <span className="shrink-0 w-[8rem]">作者</span>
+              <span className="shrink-0 w-[10rem]">日期</span>
+              <span className="shrink-0 w-[4.5rem]">版本</span>
+            </div>
+          </div>
+
+          {sortedCommits.map((commit, idx) => {
           const row = graph[idx];
           const isSelected = commit.id === selectedId;
 
@@ -335,8 +354,8 @@ export default function CommitGraph({
             <div
               key={commit.id}
               onClick={() => onSelect(commit)}
-              className={`relative flex cursor-pointer hover:bg-accent/30 border-b border-border ${
-                isSelected ? "bg-accent" : ""
+              className={`relative flex items-center cursor-pointer hover:bg-blue-500/20 ${
+                isSelected ? "row-selected" : ""
               }`}
             >
               <svg
@@ -453,7 +472,7 @@ export default function CommitGraph({
                         cx={cx}
                         cy={MID_Y}
                         r={DOT_R + 1}
-                        fill={color}
+                        fill={isSelected ? "#2563eb" : color}
                         stroke="white"
                         strokeWidth={2}
                       />
@@ -470,50 +489,81 @@ export default function CommitGraph({
                       cx={cx}
                       cy={MID_Y}
                       r={DOT_R}
-                      fill={color}
-                      stroke={isSelected ? "#3B82F6" : "white"}
+                      fill={isSelected ? "#2563eb" : color}
+                      stroke="white"
                       strokeWidth={2}
                     />
                   );
                 })()}
               </svg>
 
-              {/* 行分隔线：每行底部淡灰线 */}
-              <div className="absolute bottom-0 left-0 right-0 h-px bg-border/40" />
-
               {/* 右侧提交信息 */}
-              <div className="flex-1 px-2 py-2 min-w-0 flex items-center gap-2 text-xs">
-                {commit.ref_names.length > 0 && (
-                  <span className="flex gap-0.5 shrink-0">
-                    {commit.ref_names.map((ref) => (
-                      <span
-                        key={ref}
-                        className={`px-1 py-0.5 text-[9px] rounded ${
-                          ref.startsWith("tag:")
-                            ? "bg-yellow-500/20 text-yellow-700"
-                            : ref === currentBranch
-                              ? "bg-green-500/20 text-green-700"
-                              : "bg-blue-500/20 text-blue-700"
-                        }`}
-                      >
-                        {ref.replace(/^tag:\s*/, "")}
-                      </span>
-                    ))}
-                  </span>
+              <div className="flex-1 px-2 min-w-0 flex items-center gap-1 text-xs leading-none">
+                {commit.refs.length > 0 && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    {commit.refs.map((ref) => {
+                      const isAnnotatedTag = ref.kind === "annotated_tag";
+                      const isTag = ref.kind === "tag";
+                      const isHead = ref.kind === "head";
+                      return (
+                        <div
+                          key={ref.name}
+                          className="inline-flex items-center gap-0.5 rounded-sm bg-white dark:bg-gray-100 px-1 py-0.5 text-[10px] text-black font-mono leading-none shadow-sm border-[1px] border-gray-300 dark:border-gray-400"
+                          title={`${isHead ? "分支" : isAnnotatedTag ? "附注标签" : "标签"}: ${ref.name}`}
+                        >
+                          {/* 分支图标 */}
+                          {isHead && (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-orange-100 dark:bg-orange-200">
+                              <svg className="shrink-0 w-2.5 h-2.5 text-orange-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="6" y1="3" x2="6" y2="15" />
+                                <circle cx="18" cy="6" r="3" />
+                                <circle cx="6" cy="18" r="3" />
+                                <path d="M18 9a9 9 0 0 1-9 9" />
+                              </svg>
+                            </span>
+                          )}
+                          {/* 轻量标签图标 */}
+                          {isTag && (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-blue-100 dark:bg-blue-200">
+                              <svg className="shrink-0 w-2.5 h-2.5 text-blue-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+                                <path d="M7 7h.01" />
+                              </svg>
+                            </span>
+                          )}
+                          {/* 附注标签图标 */}
+                          {isAnnotatedTag && (
+                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-purple-100 dark:bg-purple-200">
+                              <svg className="shrink-0 w-2.5 h-2.5 text-purple-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+                                <path d="M12 9v4" />
+                                <path d="M12 17h.01" />
+                              </svg>
+                            </span>
+                          )}
+                          <span className="max-w-[6rem] truncate">{ref.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-                <span className="truncate font-medium flex-1 min-w-0">
+                <span className="truncate flex-1 min-w-0 cmt-text">
                   {commit.message}
                 </span>
-                <span className="text-muted-foreground shrink-0">
+                <span className="shrink-0 w-[8rem] truncate cmt-meta">
+                  {commit.author}
+                </span>
+                <span className="shrink-0 w-[10rem] cmt-meta">
                   {new Date(commit.time * 1000).toLocaleString()}
                 </span>
-                <span className="font-mono text-muted-foreground shrink-0">
+                <span className="font-mono cmt-meta shrink-0 w-[4.5rem]">
                   {commit.id.slice(0, 7)}
                 </span>
               </div>
             </div>
           );
-        })
+        })}
+        </>
       )}
     </div>
   );
