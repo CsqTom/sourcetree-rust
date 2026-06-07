@@ -55,6 +55,22 @@ pub struct CommitEntry {
     pub refs: Vec<RefInfo>,
 }
 
+/// 分支追踪信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchTrackingInfo {
+    /// 分支名
+    pub branch: String,
+    /// 是否为当前分支
+    pub is_current: bool,
+    /// 远程追踪分支（如 "origin/main"）
+    pub upstream: Option<String>,
+    /// 领先远程的提交数
+    pub ahead: i32,
+    /// 落后远程的提交数
+    pub behind: i32,
+}
+
 /// 书签条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookmarkEntry {

@@ -7,9 +7,10 @@ use anyhow::Result;
 use gix::bstr::BString;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+use std::process::Command;
 
 use crate::models::diff::{ChangeStatus, FileStatus};
-use crate::models::repo::{CommitEntry, RefInfo, RepoSummary};
+use crate::models::repo::{BranchTrackingInfo, CommitEntry, RefInfo, RepoSummary};
 
 /// 行选中数据结构（匹配前端 LineSelection）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +39,14 @@ impl GitService {
         let (staged, unstaged, untracked) = Self::count_status(repo)?;
         let remote_url = Self::remote_url(repo).ok().flatten();
 
+        // 计算 ahead/behind
+        let workdir = Self::work_dir(repo).ok();
+        let (ahead, behind) = if let Some(wd) = &workdir {
+            Self::count_ahead_behind(wd, &current_branch).unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
+
         Ok(RepoSummary {
             path: repo.path().to_string_lossy().to_string(),
             current_branch,
@@ -45,8 +54,8 @@ impl GitService {
             unstaged_count: unstaged,
             staged_count: staged,
             untracked_count: untracked,
-            ahead: 0,
-            behind: 0,
+            ahead,
+            behind,
         })
     }
 
@@ -91,6 +100,145 @@ impl GitService {
             }
             _ => Ok(None),
         }
+    }
+
+    /// 计算指定分支的 ahead/behind 计数
+    fn count_ahead_behind(workdir: &std::path::Path, branch: &str) -> Result<(i32, i32)> {
+        // 使用 git rev-list 计算 ahead/behind
+        // ahead: 本地有但远程没有的提交数
+        // behind: 远程有但本地没有的提交数
+        let upstream = format!("{}@{{u}}", branch);
+        // 范围语法 upstream..HEAD 必须作为单个参数
+        let ahead_range = format!("{}..HEAD", upstream);
+        let behind_range = format!("HEAD..{}", upstream);
+
+        let ahead_output = Command::new("git")
+            .args(["rev-list", "--count", &ahead_range])
+            .current_dir(workdir)
+            .output();
+
+        let behind_output = Command::new("git")
+            .args(["rev-list", "--count", &behind_range])
+            .current_dir(workdir)
+            .output();
+
+        let ahead = match ahead_output {
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().parse::<i32>().unwrap_or(0)
+            }
+            _ => 0,
+        };
+
+        let behind = match behind_output {
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().parse::<i32>().unwrap_or(0)
+            }
+            _ => 0,
+        };
+
+        Ok((ahead, behind))
+    }
+
+    /// 获取所有分支的追踪信息（ahead/behind）
+    pub fn branch_tracking_info(repo: &gix::Repository) -> Result<Vec<BranchTrackingInfo>> {
+        let workdir = Self::work_dir(repo)?;
+        let current_branch = Self::current_branch(repo).unwrap_or_default();
+        let branches = Self::list_branches(repo)?;
+
+        let mut result = Vec::new();
+
+        for branch in &branches {
+            // 获取上游追踪分支
+            let upstream = Self::get_upstream(&workdir, branch);
+
+            let (ahead, behind) = if upstream.is_some() {
+                Self::count_ahead_behind_for(&workdir, branch).unwrap_or((0, 0))
+            } else {
+                (0, 0)
+            };
+
+            result.push(BranchTrackingInfo {
+                branch: branch.clone(),
+                is_current: branch == &current_branch,
+                upstream,
+                ahead,
+                behind,
+            });
+        }
+
+        Ok(result)
+    }
+
+    /// 获取分支的上游追踪分支
+    fn get_upstream(workdir: &std::path::Path, branch: &str) -> Option<String> {
+        let output = Command::new("git")
+            .args(["config", &format!("branch.{}.remote", branch)])
+            .current_dir(workdir)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let remote = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if remote.is_empty() {
+            return None;
+        }
+
+        // 获取 merge 配置
+        let merge_output = Command::new("git")
+            .args(["config", &format!("branch.{}.merge", branch)])
+            .current_dir(workdir)
+            .output()
+            .ok()?;
+
+        if !merge_output.status.success() {
+            return None;
+        }
+
+        let merge = String::from_utf8_lossy(&merge_output.stdout).trim().to_string();
+        if merge.is_empty() {
+            return None;
+        }
+
+        // 从 refs/heads/xxx 提取分支名
+        let short = merge.strip_prefix("refs/heads/").unwrap_or(&merge);
+        Some(format!("{}/{}", remote, short))
+    }
+
+    /// 计算指定分支的 ahead/behind（用于非当前分支）
+    fn count_ahead_behind_for(workdir: &std::path::Path, branch: &str) -> Result<(i32, i32)> {
+        let upstream = format!("{}@{{u}}", branch);
+        // 范围语法必须作为单个参数
+        let ahead_range = format!("{}..{}", upstream, branch);
+        let behind_range = format!("{}..{}", branch, upstream);
+
+        let ahead_output = Command::new("git")
+            .args(["rev-list", "--count", &ahead_range])
+            .current_dir(workdir)
+            .output();
+
+        let behind_output = Command::new("git")
+            .args(["rev-list", "--count", &behind_range])
+            .current_dir(workdir)
+            .output();
+
+        let ahead = match ahead_output {
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().parse::<i32>().unwrap_or(0)
+            }
+            _ => 0,
+        };
+
+        let behind = match behind_output {
+            Ok(out) if out.status.success() => {
+                String::from_utf8_lossy(&out.stdout).trim().parse::<i32>().unwrap_or(0)
+            }
+            _ => 0,
+        };
+
+        Ok((ahead, behind))
     }
 
     // ===== 文件状态 =====

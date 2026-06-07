@@ -43,6 +43,7 @@ pub fn run() {
             commands::status::get_commit_diff,
             commands::status::get_commit_file_diff,
             // 分支管理
+            commands::branch::get_branch_tracking,
             commands::branch::create_branch,
             commands::branch::checkout_branch,
             commands::branch::checkout_new_branch,

@@ -31,6 +31,8 @@ interface HistoryPageProps {
   commitFileDiff: string;
   /** 仓库路径（用于标签操作） */
   repoPath: string;
+  /** 未推送的提交数 */
+  ahead: number;
   /** 选择提交查看详情 */
   onSelectCommit: (commit: CommitEntry) => void;
   /** 选择提交内的某个文件查看变更 */
@@ -62,6 +64,7 @@ export default function HistoryPage({
   selectedCommitFile,
   commitFileDiff,
   repoPath,
+  ahead,
   onSelectCommit,
   onSelectCommitFile,
   onLoadMore,
@@ -241,6 +244,7 @@ export default function HistoryPage({
         <CommitGraph
           commits={commits}
           selectedId={selectedCommit?.id ?? null}
+          aheadCount={ahead}
           onSelect={onSelectCommit}
           onContextMenu={(commit, e) => {
             setContextMenu({ x: e.clientX, y: e.clientY, commit });

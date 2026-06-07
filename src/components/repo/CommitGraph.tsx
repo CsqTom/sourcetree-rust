@@ -298,6 +298,8 @@ const DOT_R = 4;
 interface CommitGraphProps {
   commits: CommitEntry[];
   selectedId: string | null;
+  /** 未推送的提交数（前 N 个为未推送） */
+  aheadCount?: number;
   onSelect: (commit: CommitEntry) => void;
   /** 右键点击提交时的回调 */
   onContextMenu?: (commit: CommitEntry, e: React.MouseEvent) => void;
@@ -306,6 +308,7 @@ interface CommitGraphProps {
 export default function CommitGraph({
   commits,
   selectedId,
+  aheadCount = 0,
   onSelect,
   onContextMenu,
 }: CommitGraphProps) {
@@ -552,6 +555,26 @@ export default function CommitGraph({
                         </div>
                       );
                     })}
+                    {/* 未推送标识：前 aheadCount 个提交显示 */}
+                    {idx < aheadCount && (
+                      <div
+                        className="inline-flex items-center gap-0.5 rounded-sm bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-400 font-medium leading-none shadow-sm border border-green-300 dark:border-green-700"
+                        title="此提交尚未推送到远程"
+                      >
+                        ↑未推送
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* 无 refs 但有未推送时也显示标识 */}
+                {commit.refs.length === 0 && idx < aheadCount && (
+                  <div className="flex items-center gap-1">
+                    <div
+                      className="inline-flex items-center gap-0.5 rounded-sm bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-400 font-medium leading-none shadow-sm border border-green-300 dark:border-green-700"
+                      title="此提交尚未推送到远程"
+                    >
+                      ↑未推送
+                    </div>
                   </div>
                 )}
                 <span className="truncate flex-1 min-w-0 cmt-text">

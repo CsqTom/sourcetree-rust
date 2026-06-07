@@ -132,6 +132,8 @@ interface FileStatusPageProps {
   onStage: (path: string) => void;
   /** 暂存所有 */
   onStageAll: () => void;
+  /** 取消暂存单个文件 */
+  onUnstage: (path: string) => void;
   /** 取消暂存所有 */
   onUnstageAll: () => void;
   /** 提交 */
@@ -173,6 +175,7 @@ export default function FileStatusPage({
   onShowDiff,
   onStage,
   onStageAll,
+  onUnstage,
   onUnstageAll,
   onCommit,
   onDiscardFile,
@@ -232,12 +235,22 @@ export default function FileStatusPage({
             <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-muted/20 flex items-center justify-between sticky top-0 z-10">
               <span>已暂存文件（{stagedFiles.length}）</span>
               {stagedFiles.length > 0 && (
-                <button
-                  onClick={onUnstageAll}
-                  className="text-[10px] text-primary hover:text-primary/80"
-                >
-                  取消选定暂存
-                </button>
+                <div className="flex items-center gap-1">
+                  {selectedFile && isStagedFile && stagedFiles.some(f => f.path === selectedFile) && (
+                    <button
+                      onClick={() => onUnstage(selectedFile)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent text-foreground"
+                    >
+                      取消选定暂存
+                    </button>
+                  )}
+                  <button
+                    onClick={onUnstageAll}
+                    className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent text-foreground"
+                  >
+                    取消所有暂存
+                  </button>
+                </div>
               )}
             </div>
             {stagedFiles.length === 0 ? (
@@ -248,8 +261,8 @@ export default function FileStatusPage({
               stagedFiles.map((f) => (
                 <div
                   key={f.path}
-                  className={`flex items-center px-3 py-1.5 text-xs cursor-pointer hover:bg-accent/50 ${
-                    selectedFile === f.path && isStagedFile ? "bg-blue-50 border border-blue-300 rounded-sm" : ""
+                  className={`group flex items-center px-3 py-1.5 text-xs cursor-pointer hover:bg-accent/50 ${
+                    selectedFile === f.path && isStagedFile ? "bg-blue-600 text-white rounded-sm" : ""
                   }`}
                   onClick={() => handleShowDiff(f.path, true)}
                 >
@@ -257,6 +270,19 @@ export default function FileStatusPage({
                     <StatusIcon status={f.stage_status || ""} />
                   </span>
                   <span className="flex-1 truncate ml-1">{f.path}</span>
+                  {/* 取消暂存按钮 */}
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onUnstage(f.path);
+                      }}
+                      className="ml-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent rounded px-0.5"
+                      title="取消暂存"
+                    >
+                      −
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -267,12 +293,22 @@ export default function FileStatusPage({
             <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-muted/20 flex items-center justify-between sticky top-0 z-10">
               <span>未暂存文件（{unstagedFiles.length + untrackedFiles.length}）</span>
               {(unstagedFiles.length + untrackedFiles.length) > 0 && (
-                <button
-                  onClick={onStageAll}
-                  className="text-[10px] text-primary hover:text-primary/80"
-                >
-                  暂存所有
-                </button>
+                <div className="flex items-center gap-1">
+                  {selectedFile && !isStagedFile && (unstagedFiles.some(f => f.path === selectedFile) || untrackedFiles.some(f => f.path === selectedFile)) && (
+                    <button
+                      onClick={() => onStage(selectedFile)}
+                      className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent text-foreground"
+                    >
+                      暂存所选
+                    </button>
+                  )}
+                  <button
+                    onClick={onStageAll}
+                    className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent text-foreground"
+                  >
+                    暂存所有
+                  </button>
+                </div>
               )}
             </div>
             {unstagedFiles.length === 0 && untrackedFiles.length === 0 ? (
@@ -284,7 +320,7 @@ export default function FileStatusPage({
                 <div
                   key={f.path}
                   className={`group flex items-center px-3 py-1.5 text-xs cursor-pointer hover:bg-accent/50 ${
-                    selectedFile === f.path && !isStagedFile ? "bg-blue-50 border border-blue-300 rounded-sm" : ""
+                    selectedFile === f.path && !isStagedFile ? "bg-blue-600 text-white rounded-sm" : ""
                   }`}
                   onClick={() => handleShowDiff(f.path, false)}
                 >

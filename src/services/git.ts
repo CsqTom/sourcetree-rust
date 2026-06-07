@@ -205,6 +205,22 @@ export async function deleteBranch(
   return invoke<string>("delete_branch", { repoPath, branchName, force });
 }
 
+/** 分支追踪信息 */
+export interface BranchTrackingInfo {
+  branch: string;
+  isCurrent: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+}
+
+/** 获取所有分支的追踪信息（ahead/behind） */
+export async function getBranchTracking(
+  repoPath: string
+): Promise<BranchTrackingInfo[]> {
+  return invoke<BranchTrackingInfo[]>("get_branch_tracking", { repoPath });
+}
+
 // ===== 远程操作命令 =====
 
 /** Fetch 远程更新 */

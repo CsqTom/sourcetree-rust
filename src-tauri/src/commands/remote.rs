@@ -9,11 +9,17 @@ use std::process::Command;
 pub fn fetch_remote(repo_path: String, remote: Option<String>) -> Result<String, String> {
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
 
-    let output = Command::new("git")
+    let child = Command::new("git")
         .args(["fetch", &remote_name])
         .current_dir(&repo_path)
-        .output()
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("执行 git fetch 失败: {}", e))?;
+
+    let output = child.wait_with_output()
+        .map_err(|e| format!("等待 git fetch 完成失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -41,11 +47,17 @@ pub fn pull_remote(repo_path: String, remote: Option<String>, branch: Option<Str
         vec!["pull", &remote_name, &branch_name]
     };
 
-    let output = Command::new("git")
+    let child = Command::new("git")
         .args(&args)
         .current_dir(&repo_path)
-        .output()
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("执行 git pull 失败: {}", e))?;
+
+    let output = child.wait_with_output()
+        .map_err(|e| format!("等待 git pull 完成失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -81,11 +93,18 @@ pub fn push_remote(
         args.push(&branch_name);
     }
 
-    let output = Command::new("git")
+    // 使用 spawn + wait_with_output 以支持 git credential helper 弹窗认证
+    let child = Command::new("git")
         .args(&args)
         .current_dir(&repo_path)
-        .output()
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("执行 git push 失败: {}", e))?;
+
+    let output = child.wait_with_output()
+        .map_err(|e| format!("等待 git push 完成失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

@@ -4,6 +4,13 @@
 
 use std::process::Command;
 
+/// 获取所有分支的追踪信息（ahead/behind）
+#[tauri::command]
+pub fn get_branch_tracking(repo_path: String) -> Result<Vec<crate::models::repo::BranchTrackingInfo>, String> {
+    let repo = crate::services::git_service::GitService::open(&repo_path).map_err(|e| e.to_string())?;
+    crate::services::git_service::GitService::branch_tracking_info(&repo).map_err(|e| e.to_string())
+}
+
 /// 创建新分支
 #[tauri::command]
 pub fn create_branch(repo_path: String, branch_name: String) -> Result<String, String> {

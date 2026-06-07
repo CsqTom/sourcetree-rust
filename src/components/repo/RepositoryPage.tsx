@@ -33,9 +33,11 @@ import {
   discardLinesByIndices,
   getStagedDiff,
   unstageLines,
+  getBranchTracking,
+  listRemotes,
 } from "@/services/git";
 import { useRepoStore, useSelectionStore } from "@/stores";
-import type { FileStatus, RepoSummary, CommitEntry } from "@/services/git";
+import type { FileStatus, RepoSummary, CommitEntry, BranchTrackingInfo } from "@/services/git";
 import FileStatusPage from "./FileStatusPage";
 import HistoryPage from "./HistoryPage";
 import SearchPage from "./SearchPage";
@@ -69,6 +71,8 @@ export default function RepositoryPage() {
 
   // 分支面板状态
   const [showBranches, setShowBranches] = useState(true);
+  // 分支追踪信息（ahead/behind）
+  const [branchTracking, setBranchTracking] = useState<BranchTrackingInfo[]>([]);
 
   // 选中的提交
   const [selectedCommit, setSelectedCommit] = useState<CommitEntry | null>(
@@ -96,17 +100,19 @@ export default function RepositoryPage() {
     setLoading(true);
     setCommitOffset(0);
     try {
-      const [statusData, summaryData, commitData, branchData] =
+      const [statusData, summaryData, commitData, branchData, trackingData] =
         await Promise.all([
           getStatus(repoPath),
           getRepoSummary(repoPath).catch(() => null),
           getRecentCommits(repoPath),
           listBranches(repoPath),
+          getBranchTracking(repoPath).catch(() => []),
         ]);
       setFiles(statusData);
       setSummary(summaryData);
       setCommits(commitData);
       setBranches(branchData);
+      setBranchTracking(trackingData);
       if (summaryData) updateBranch(summaryData.current_branch);
     } catch (e) {
       console.error("刷新失败", e);
@@ -119,6 +125,29 @@ export default function RepositoryPage() {
   useEffect(() => {
     if (repoPath) refreshAll();
   }, [repoPath, refreshAll]);
+
+  // 每小时自动 fetch（不自动 pull，仅获取远程更新以显示落后记录数）
+  useEffect(() => {
+    if (!repoPath) return;
+    const AUTO_FETCH_INTERVAL = 60 * 60 * 1000; // 1小时
+    const doAutoFetch = async () => {
+      try {
+        await fetchRemote(repoPath);
+        // fetch 后刷新追踪信息
+        const trackingData = await getBranchTracking(repoPath).catch(() => []);
+        setBranchTracking(trackingData);
+        const summaryData = await getRepoSummary(repoPath).catch(() => null);
+        if (summaryData) setSummary(summaryData);
+      } catch (e) {
+        // 静默失败，不打扰用户
+        console.debug("自动 fetch 失败:", e);
+      }
+    };
+    // 首次打开时也 fetch 一次
+    doAutoFetch();
+    const timer = setInterval(doAutoFetch, AUTO_FETCH_INTERVAL);
+    return () => clearInterval(timer);
+  }, [repoPath]);
 
   // 记录最后一次点击文件来自已暂存还是未暂存列表
   const lastClickFromStagedRef = useRef(false);
@@ -156,6 +185,16 @@ export default function RepositoryPage() {
       }
     } catch (e) {
       console.error("取消暂存所有失败", e);
+    }
+  };
+
+  /** 取消暂存单个文件 */
+  const handleUnstage = async (path: string) => {
+    try {
+      await unstageFiles(repoPath, [path]);
+      await refreshAll();
+    } catch (e) {
+      console.error("取消暂存失败", e);
     }
   };
 
@@ -211,33 +250,75 @@ export default function RepositoryPage() {
   /** Fetch */
   const handleFetch = async () => {
     try {
-      const result = await fetchRemote(repoPath);
-      console.log(result);
+      // 获取当前分支追踪的远程名
+      const tracking = branchTracking.find(t => t.isCurrent);
+      let remote: string | undefined;
+      if (tracking?.upstream) {
+        remote = tracking.upstream.split("/")[0];
+      }
+      if (!remote) {
+        const remotes = await listRemotes(repoPath);
+        remote = remotes.length > 0 ? remotes[0].name : undefined;
+      }
+
+      const result = await fetchRemote(repoPath, remote);
       await refreshAll();
+      alert("获取更新成功\n" + result);
     } catch (e: any) {
       console.error("Fetch 失败:", e);
+      alert("获取更新失败: " + (e?.message || e));
     }
   };
 
   /** Pull */
   const handlePull = async () => {
     try {
-      const result = await pullRemote(repoPath);
-      console.log(result);
+      const tracking = branchTracking.find(t => t.isCurrent);
+      let remote: string | undefined;
+      if (tracking?.upstream) {
+        remote = tracking.upstream.split("/")[0];
+      }
+      if (!remote) {
+        const remotes = await listRemotes(repoPath);
+        remote = remotes.length > 0 ? remotes[0].name : undefined;
+      }
+
+      const result = await pullRemote(repoPath, remote, currentBranch);
       await refreshAll();
+      alert("拉取成功\n" + result);
     } catch (e: any) {
       console.error("Pull 失败:", e);
+      alert("拉取失败: " + (e?.message || e));
     }
   };
 
   /** Push */
   const handlePush = async () => {
     try {
-      const result = await pushRemote(repoPath, undefined, currentBranch, true);
-      console.log(result);
+      // 1. 优先使用分支追踪的远程
+      const tracking = branchTracking.find(t => t.isCurrent);
+      let remote: string | undefined;
+      if (tracking?.upstream) {
+        // upstream 格式为 "origin/main"，提取远程名
+        remote = tracking.upstream.split("/")[0];
+      }
+
+      // 2. 如果没有追踪远程，尝试获取远程列表
+      if (!remote) {
+        const remotes = await listRemotes(repoPath);
+        if (remotes.length === 0) {
+          alert("推送失败：当前仓库没有配置远程仓库。\n请先通过 git remote add 添加远程仓库。");
+          return;
+        }
+        remote = remotes[0].name;
+      }
+
+      const result = await pushRemote(repoPath, remote, currentBranch, !tracking?.upstream);
       await refreshAll();
+      alert("推送成功\n" + result);
     } catch (e: any) {
       console.error("Push 失败:", e);
+      alert("推送失败: " + (e?.message || e));
     }
   };
 
@@ -461,6 +542,9 @@ export default function RepositoryPage() {
             <path d="M19 11H5" />
           </svg>
           拉取
+          {summary && summary.behind > 0 && (
+            <span className="ml-0.5 text-orange-600 text-[10px] font-medium">↓{summary.behind}</span>
+          )}
         </button>
         <button
           onClick={handlePush}
@@ -472,6 +556,9 @@ export default function RepositoryPage() {
             <path d="M5 13H19" />
           </svg>
           推送
+          {summary && summary.ahead > 0 && (
+            <span className="ml-0.5 text-green-600 text-[10px] font-medium">↑{summary.ahead}</span>
+          )}
         </button>
         <button
           onClick={handleFetch}
@@ -614,23 +701,41 @@ export default function RepositoryPage() {
             </div>
             {showBranches && (
               <div className="pb-1">
-                {branches.map((b) => (
-                  <div
-                    key={b}
-                    onClick={() => handleSwitchBranch(b)}
-                    className={`px-3 py-1 text-xs cursor-pointer hover:bg-accent/50 flex items-center gap-2 ${
-                      b === currentBranch ? "bg-accent font-medium" : ""
-                    }`}
-                  >
-                    <svg className="w-3.5 h-3.5 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                    </svg>
-                    <span>{b}</span>
-                    {b === currentBranch && (
-                      <span className="ml-auto text-green-600 text-[10px]">●</span>
-                    )}
-                  </div>
-                ))}
+                {branches.map((b) => {
+                  // 查找该分支的追踪信息
+                  const tracking = branchTracking.find(t => t.branch === b);
+                  const hasAhead = tracking && tracking.ahead > 0;
+                  const hasBehind = tracking && tracking.behind > 0;
+                  return (
+                    <div
+                      key={b}
+                      onClick={() => handleSwitchBranch(b)}
+                      className={`px-3 py-1 text-xs cursor-pointer hover:bg-accent/50 flex items-center gap-2 ${
+                        b === currentBranch ? "bg-accent font-medium" : ""
+                      }`}
+                    >
+                      <svg className="w-3.5 h-3.5 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                      <span className="truncate">{b}</span>
+                      {/* ahead/behind 标记 */}
+                      {(hasAhead || hasBehind) && (
+                        <span className="ml-auto flex items-center gap-0.5 shrink-0">
+                          {hasAhead && (
+                            <span className="text-green-600 text-[10px]">↑{tracking!.ahead}</span>
+                          )}
+                          {hasBehind && (
+                            <span className="text-orange-600 text-[10px]">↓{tracking!.behind}</span>
+                          )}
+                        </span>
+                      )}
+                      {/* 当前分支标记（无 ahead/behind 时显示圆点） */}
+                      {b === currentBranch && !hasAhead && !hasBehind && (
+                        <span className="ml-auto text-green-600 text-[10px] shrink-0">●</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -721,6 +826,7 @@ export default function RepositoryPage() {
             onShowDiff={handleShowDiff}
             onStage={handleStage}
             onStageAll={handleStageAll}
+            onUnstage={handleUnstage}
             onUnstageAll={handleUnstageAll}
             onCommit={handleCommit}
             onDiscardFile={handleDiscardFile}
@@ -742,6 +848,7 @@ export default function RepositoryPage() {
             selectedCommitFile={selectedCommitFile}
             commitFileDiff={commitFileDiff}
             repoPath={repoPath}
+            ahead={summary?.ahead ?? 0}
             onSelectCommit={loadCommitDetail}
             onSelectCommitFile={handleCommitFileSelect}
             onLoadMore={loadMoreCommits}
