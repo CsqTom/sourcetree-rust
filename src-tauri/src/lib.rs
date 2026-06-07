@@ -57,6 +57,24 @@ pub fn run() {
             commands::remote::add_remote,
             commands::remote::remove_remote,
             commands::remote::set_remote_url,
+            // 丢弃更改
+            commands::discard::stage_hunk,
+            commands::discard::discard_file,
+            commands::discard::discard_hunk,
+            commands::discard::discard_lines,
+            commands::discard::read_working_file,
+            commands::discard::write_working_file,
+            commands::discard::stage_lines,
+            commands::discard::discard_lines_by_indices,
+            commands::discard::get_staged_diff,
+            commands::discard::unstage_lines,
+            // 标签管理
+            commands::tag::create_lightweight_tag,
+            commands::tag::create_annotated_tag,
+            commands::tag::delete_tag,
+            commands::tag::push_tag,
+            commands::tag::delete_remote_tag,
+            commands::tag::list_tags,
         ])
         .run(tauri::generate_context!())
         .expect("启动应用失败");

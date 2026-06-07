@@ -5,9 +5,19 @@
 
 use anyhow::Result;
 use gix::bstr::BString;
+use serde::{Deserialize, Serialize};
+use std::io::Write;
 
 use crate::models::diff::{ChangeStatus, FileStatus};
 use crate::models::repo::{CommitEntry, RefInfo, RepoSummary};
+
+/// 行选中数据结构（匹配前端 LineSelection）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineSelection {
+    pub hunk_index: usize,
+    pub line_indices: Vec<usize>,
+}
 
 /// Git 核心服务
 pub struct GitService;
@@ -217,6 +227,12 @@ impl GitService {
         Ok(workdir.to_path_buf())
     }
 
+    /// 获取仓库工作目录路径（根据 repo_path 字符串打开仓库）
+    pub fn get_work_dir(repo_path: &str) -> Result<std::path::PathBuf> {
+        let repo = gix::open(repo_path)?;
+        Self::work_dir(&repo)
+    }
+
     // ===== 差异操作 =====
 
     /// 获取文件差异列表（基于状态信息生成）
@@ -249,6 +265,22 @@ impl GitService {
             .args(["diff", "--", path])
             .output()
             .map_err(|e| anyhow::anyhow!("执行 git diff 失败: {}", e))?;
+
+        let text = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(text)
+    }
+
+    /// 获取已暂存文件的差异（HEAD vs 暂存区）
+    ///
+    /// 等价于: git diff --cached -- <path>
+    pub fn diff_cached_text(repo: &gix::Repository, path: &str) -> Result<String> {
+        let workdir = Self::work_dir(repo)?;
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["diff", "--cached", "--", path])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git diff --cached 失败: {}", e))?;
 
         let text = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(text)
@@ -477,6 +509,760 @@ impl GitService {
     pub fn is_available() -> bool {
         true
     }
+
+    // ===== 丢弃更改 =====
+
+    /// 丢弃文件的所有更改（git checkout -- <file>）
+    pub fn discard_file(repo: &gix::Repository, path: &str) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["checkout", "--", path])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git checkout 丢弃失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("丢弃文件失败: {}", stderr);
+        }
+        log::info!("已丢弃文件更改: {}", path);
+        Ok(())
+    }
+
+    /// 从 diff 文本中提取指定 hunk 的补丁内容
+    fn extract_hunk_patch(diff_text: &str, hunk_index: usize) -> Option<String> {
+        let mut patch = String::new();
+        let mut current_hunk = -1;
+        let mut in_target = false;
+
+        for line in diff_text.lines() {
+            if line.starts_with("@@" ) {
+                current_hunk += 1;
+                in_target = current_hunk == hunk_index as isize;
+                if in_target {
+                    patch.push_str(line);
+                    patch.push('\n');
+                }
+            } else if in_target {
+                // 遇到下一个 hunk 或文件头则停止
+                if line.starts_with("diff --git") || line.starts_with("@@") {
+                    break;
+                }
+                patch.push_str(line);
+                patch.push('\n');
+            }
+        }
+
+        if patch.is_empty() { None } else { Some(patch) }
+    }
+
+    /// 暂存指定 hunk 的更改（使用 git apply --cached 正向应用 hunk）
+    pub fn stage_hunk(repo: &gix::Repository, path: &str, hunk_index: usize) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+
+        // 获取完整 diff
+        let diff_text = Self::diff_file_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("没有可暂存的更改");
+        }
+
+        // 提取完整的 diff 头部和目标 hunk
+        let mut full_patch = String::new();
+        let mut current_hunk = -1;
+        let mut header_done = false;
+
+        for line in diff_text.lines() {
+            if !header_done {
+                full_patch.push_str(line);
+                full_patch.push('\n');
+                if line.starts_with("@@") {
+                    header_done = true;
+                    current_hunk += 1;
+                    if current_hunk == hunk_index as isize {
+                        // 继续收集这个 hunk 的内容
+                    } else {
+                        // 不是目标 hunk，移除刚添加的 @@ 行并停止
+                        full_patch = full_patch.trim_end().to_string();
+                        if let Some(pos) = full_patch.rfind('\n') {
+                            full_patch = full_patch[..pos].to_string();
+                        }
+                        break;
+                    }
+                }
+            } else {
+                if line.starts_with("@@") {
+                    current_hunk += 1;
+                    if current_hunk > hunk_index as isize {
+                        break;
+                    }
+                }
+                if line.starts_with("diff --git") {
+                    break;
+                }
+                full_patch.push_str(line);
+                full_patch.push('\n');
+            }
+        }
+
+        // 使用 git apply --cached 应用到暂存区
+        let mut child = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["apply", "--cached"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("执行 git apply --cached 失败: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(full_patch.as_bytes())?;
+            stdin.flush()?;
+        }
+
+        let output = child.wait_with_output()
+            .map_err(|e| anyhow::anyhow!("等待 git apply 完成失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("暂存 hunk 失败: {}", stderr);
+        }
+
+        log::info!("已暂存 hunk #{} 在文件: {}", hunk_index, path);
+        Ok(())
+    }
+
+    /// 丢弃指定 hunk 的更改（使用 git apply -R 反向应用 hunk）
+    pub fn discard_hunk(repo: &gix::Repository, path: &str, hunk_index: usize) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+
+        // 获取完整 diff
+        let diff_text = Self::diff_file_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("没有可丢弃的更改");
+        }
+
+        // 需要从文件 diff 中提取包含文件头的完整上下文
+        // 提取 diff --git 头部 + 该 hunk
+        let mut full_patch = String::new();
+        let mut header_done = false;
+        for line in diff_text.lines() {
+            if line.starts_with("diff --git") && !header_done {
+                full_patch.push_str(line);
+                full_patch.push('\n');
+                header_done = true;
+            } else if header_done {
+                if line.starts_with("diff --git") {
+                    break; // 下一个文件，停止
+                }
+                if line.starts_with("@@") {
+                    // 当前或之后的 hunk
+                    if line.starts_with("@@") && full_patch.lines().filter(|l| l.starts_with("@@")).count() > hunk_index {
+                        break; // 已超出目标 hunk
+                    }
+                }
+                full_patch.push_str(line);
+                full_patch.push('\n');
+            }
+        }
+
+        // 使用 git apply -R 反向应用
+        let mut child = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["apply", "-R"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("执行 git apply 失败: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(full_patch.as_bytes())?;
+            stdin.flush()?;
+        }
+
+        let output = child.wait_with_output()
+            .map_err(|e| anyhow::anyhow!("等待 git apply 完成失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("丢弃 hunk 失败: {}", stderr);
+        }
+
+        log::info!("已丢弃 hunk #{} 在文件: {}", hunk_index, path);
+        Ok(())
+    }
+
+    /// 丢弃指定行的更改（使用 git apply -R 反向应用选中行的补丁）
+    pub fn discard_lines(repo: &gix::Repository, path: &str, start_line: u32, end_line: u32) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+
+        // 获取完整 diff
+        let diff_text = Self::diff_file_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("没有可丢弃的更改");
+        }
+
+        // 构造仅包含指定行的补丁
+        // 解析 diff 找到新旧文件名
+        let mut patch = String::new();
+        let mut in_header = true;
+        let mut capture = false;
+
+        for line in diff_text.lines() {
+            if in_header {
+                patch.push_str(line);
+                patch.push('\n');
+                if line.starts_with("---") || line.starts_with("+++") {
+                    continue;
+                }
+                // 文件头结束于第一个 @@
+                if line.starts_with("@@") {
+                    in_header = false;
+                    // 解析 @@ -a,b +c,d @@
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Some(old_range) = parts.get(1) {
+                            if let Some(range_str) = old_range.strip_prefix('-') {
+                                if let Some(old_start_str) = range_str.split(',').next() {
+                                    if let Ok(old_start) = old_start_str.parse::<u32>() {
+                                        capture = old_start >= start_line && old_start <= end_line;
+                                        // 始终输出 hunk 头
+                                        patch.push_str(line);
+                                        patch.push('\n');
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !in_header {
+                if line.starts_with("@@") || line.starts_with("diff --git") {
+                    break; // 只处理第一个 hunk
+                }
+
+                if capture {
+                    patch.push_str(line);
+                    patch.push('\n');
+                }
+            }
+        }
+
+        if patch.is_empty() {
+            anyhow::bail!("无法构造行级补丁，请检查行号范围");
+        }
+
+        // 应用反向补丁
+        let mut child = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["apply", "-R"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("执行 git apply 失败: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+            stdin.flush()?;
+        }
+
+        let output = child.wait_with_output()
+            .map_err(|e| anyhow::anyhow!("等待 git apply 完成失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("丢弃行更改失败: {}", stderr);
+        }
+
+        log::info!("已丢弃文件 {} 的行 {}-{}", path, start_line, end_line);
+        Ok(())
+    }
+
+    // ===== 标签操作 =====
+
+    /// 创建轻量标签
+    pub fn create_lightweight_tag(repo: &gix::Repository, name: &str, commit_id: Option<&str>) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&workdir);
+        cmd.arg("tag");
+        cmd.arg(name);
+        if let Some(commit) = commit_id {
+            cmd.arg(commit);
+        }
+        let output = cmd.output()
+            .map_err(|e| anyhow::anyhow!("执行 git tag 失败: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("创建标签失败: {}", stderr);
+        }
+        log::info!("已创建轻量标签: {}", name);
+        Ok(())
+    }
+
+    /// 创建附注标签
+    pub fn create_annotated_tag(repo: &gix::Repository, name: &str, message: &str, commit_id: Option<&str>) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(&workdir);
+        cmd.args(["-c", "user.name=sourcetree-rust"]);
+        cmd.args(["-c", "user.email=sourcetree-rust@local"]);
+        cmd.args(["tag", "-a", name, "-m", message]);
+        if let Some(commit) = commit_id {
+            cmd.arg(commit);
+        }
+        let output = cmd.output()
+            .map_err(|e| anyhow::anyhow!("执行 git tag -a 失败: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("创建附注标签失败: {}", stderr);
+        }
+        log::info!("已创建附注标签: {}", name);
+        Ok(())
+    }
+
+    /// 删除本地标签
+    pub fn delete_tag(repo: &gix::Repository, name: &str) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["tag", "-d", name])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git tag -d 失败: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("删除标签失败: {}", stderr);
+        }
+        log::info!("已删除标签: {}", name);
+        Ok(())
+    }
+
+    /// 推送标签到远程
+    pub fn push_tag(repo: &gix::Repository, name: &str, remote: Option<&str>) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let remote_name = remote.unwrap_or("origin");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["push", remote_name, name])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git push tag 失败: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("推送标签失败: {}", stderr);
+        }
+        log::info!("已推送标签 {} 到 {}", name, remote_name);
+        Ok(())
+    }
+
+    /// 删除远程标签
+    pub fn delete_remote_tag(repo: &gix::Repository, name: &str, remote: Option<&str>) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let remote_name = remote.unwrap_or("origin");
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["push", remote_name, "--delete", name])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git push --delete tag 失败: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("删除远程标签失败: {}", stderr);
+        }
+        log::info!("已删除远程标签 {} 从 {}", name, remote_name);
+        Ok(())
+    }
+
+    /// 列出所有标签
+    pub fn list_tags(repo: &gix::Repository) -> Result<Vec<String>> {
+        let workdir = Self::work_dir(repo)?;
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&workdir)
+            .args(["tag", "-l", "--sort=-creatordate"])
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行 git tag -l 失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("列出标签失败: {}", stderr);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout.lines().map(|s| s.to_string()).collect())
+    }
+
+    // ===== 行级暂存/丢弃操作 =====
+
+    /// 暂存选中的行（通过 hunk 内行索引）
+    ///
+    /// `selections` 格式: [(hunk_index, [line_index_within_hunk]), ...]
+    /// 从 diff 中提取选中的 +/- 行及其间上下文，构造合法补丁应用到暂存区
+    pub fn stage_lines_by_indices(
+        repo: &gix::Repository,
+        path: &str,
+        selections: &[LineSelection],
+    ) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let diff_text = Self::diff_file_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("没有可暂存的更改");
+        }
+
+        let patch = Self::build_partial_patch(&diff_text, selections)?;
+        if patch.is_empty() {
+            anyhow::bail!("没有选中的行");
+        }
+
+        Self::apply_patch_to_index(&workdir, &patch, false)?;
+        log::info!("已暂存文件 {} 的 {} 个选中行组", path, selections.len());
+        Ok(())
+    }
+
+    /// 丢弃选中的行（通过 hunk 内行索引）
+    ///
+    /// 构建部分补丁并反向应用到工作目录（git apply -R，不带 --cached），
+    /// 将选中的更改从工作目录中移除
+    pub fn discard_lines_by_indices(
+        repo: &gix::Repository,
+        path: &str,
+        selections: &[LineSelection],
+    ) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let diff_text = Self::diff_file_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("没有可丢弃的更改");
+        }
+
+        let patch = Self::build_partial_patch(&diff_text, selections)?;
+        if patch.is_empty() {
+            anyhow::bail!("没有选中的行");
+        }
+
+        // 丢弃操作：反向应用到工作目录（不修改暂存区）
+        Self::apply_patch_to_workdir(&workdir, &patch, true)?;
+        log::info!("已丢弃文件 {} 的 {} 个选中行组", path, selections.len());
+        Ok(())
+    }
+
+    /// 取消暂存选中的行（从暂存区移除，回到未暂存状态）
+    ///
+    /// 使用 git diff --cached 获取已暂存的差异，
+    /// 构建部分补丁并反向应用到暂存区（git apply -R --cached）
+    pub fn unstage_lines_by_indices(
+        repo: &gix::Repository,
+        path: &str,
+        selections: &[LineSelection],
+    ) -> Result<()> {
+        let workdir = Self::work_dir(repo)?;
+        let diff_text = Self::diff_cached_text(repo, path)?;
+        if diff_text.is_empty() {
+            anyhow::bail!("已暂存文件没有可取消的更改");
+        }
+
+        let patch = Self::build_partial_patch(&diff_text, selections)?;
+        if patch.is_empty() {
+            anyhow::bail!("没有选中的行");
+        }
+
+        Self::apply_patch_to_index(&workdir, &patch, true)?;
+        log::info!("已取消暂存文件 {} 的 {} 个选中行组", path, selections.len());
+        Ok(())
+    }
+
+    /// 构建仅包含选中行的部分补丁
+    ///
+    /// 解析完整 diff，提取指定 hunk 中选中的行，构造合法 git 补丁
+    fn build_partial_patch(diff_text: &str, selections: &[LineSelection]) -> Result<String> {
+        // 按行分割并保留原始格式
+        let all_lines: Vec<&str> = diff_text.lines().collect();
+        let mut headers = Vec::new();
+        // hunk 内的行类型：
+        //   ' ' = 上下文行, '+' = 新增行, '-' = 删除行, '\\' = "\ No newline at end of file"
+        let mut hunks_raw: Vec<(String, Vec<(char, &str)>)> = Vec::new();
+
+        // 解析 diff
+        let mut in_hunk = false;
+        let mut current_hunk_header = String::new();
+        let mut current_hunk_lines: Vec<(char, &str)> = Vec::new();
+
+        for line in &all_lines {
+            if line.starts_with("@@") && !in_hunk {
+                in_hunk = true;
+                current_hunk_header = line.to_string();
+                current_hunk_lines.clear();
+            } else if line.starts_with("@@") && in_hunk {
+                hunks_raw.push((current_hunk_header.clone(), current_hunk_lines.clone()));
+                current_hunk_header = line.to_string();
+                current_hunk_lines.clear();
+            } else if line.starts_with("diff --git") && !in_hunk {
+                headers.push(line.to_string());
+            } else if in_hunk {
+                // hunk 内的行：记录前缀和原始内容
+                if line.starts_with('\\') {
+                    // "\ No newline at end of file" 标记，用 '\\' 前缀标识
+                    current_hunk_lines.push(('\\', line));
+                } else if line.is_empty() {
+                    // 空行在 diff 中是上下文行，必须以空格开头
+                    current_hunk_lines.push((' ', " "));
+                } else if line.starts_with('+') {
+                    current_hunk_lines.push(('+', line));
+                } else if line.starts_with('-') {
+                    current_hunk_lines.push(('-', line));
+                } else if line.starts_with(' ') {
+                    current_hunk_lines.push((' ', line));
+                } else {
+                    current_hunk_lines.push((' ', line));
+                }
+            } else {
+                headers.push(line.to_string());
+            }
+        }
+        if in_hunk {
+            hunks_raw.push((current_hunk_header, current_hunk_lines));
+        }
+
+        // 构建选中行的补丁
+        let mut patch = String::new();
+
+        // 输出 diff 头部
+        for h in &headers {
+            if h.starts_with("diff --git") || h.starts_with("index ") || h.starts_with("---") || h.starts_with("+++") {
+                patch.push_str(h);
+                patch.push('\n');
+            }
+        }
+
+        // 检查是否有 diff --git 头，如果没有就手动构造
+        if !headers.iter().any(|h| h.starts_with("diff --git")) {
+            patch.insert_str(0, "diff --git a/file b/file\n--- a/file\n+++ b/file\n");
+        }
+
+        // 处理每个有选中的 hunk
+        let sel_map: std::collections::HashMap<usize, &[usize]> = selections.iter()
+            .map(|s| (s.hunk_index, s.line_indices.as_slice()))
+            .collect();
+
+        for (hunk_idx, (hdr, lines)) in hunks_raw.iter().enumerate() {
+            if let Some(selected_indices) = sel_map.get(&hunk_idx) {
+                if selected_indices.is_empty() {
+                    continue;
+                }
+
+                // 只处理 +/- 行的选中
+                let relevant_indices: Vec<usize> = selected_indices.iter()
+                    .filter(|&&li| li < lines.len() && lines[li].0 != '\\')
+                    .copied()
+                    .collect();
+
+                if relevant_indices.is_empty() {
+                    continue;
+                }
+
+                let first_idx = *relevant_indices.first().unwrap();
+                let last_idx = *relevant_indices.last().unwrap();
+
+                // 扩展范围以包含上下文行（确保 git apply 能正确定位）
+                let mut actual_first = first_idx;
+                let mut actual_last = last_idx;
+
+                // 向前扩展：包含所有连续的上下文行（' '）
+                if first_idx > 0 {
+                    for i in (0..first_idx).rev() {
+                        if lines[i].0 == ' ' {
+                            actual_first = i;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // 向后扩展：包含所有连续的上下文行（' '），以及紧跟的 "\ No newline" 标记
+                if last_idx + 1 < lines.len() {
+                    for i in (last_idx + 1)..lines.len() {
+                        if lines[i].0 == ' ' {
+                            actual_last = i;
+                        } else if lines[i].0 == '\\' {
+                            // "\ No newline at end of file" 需要跟随其前面的行一起输出
+                            actual_last = i;
+                            break;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // 如果选中的最后一行是 + 行，检查后面是否有 "\ No newline" 标记
+                if actual_last + 1 < lines.len() && lines[actual_last + 1].0 == '\\' {
+                    actual_last = actual_last + 1;
+                }
+
+                // 提取范围内所有行（含上下文）
+                let sub_lines: Vec<(char, &str)> = lines[actual_first..=actual_last].to_vec();
+
+                // 计算 @@ 头中的 old/new line number
+                let header_parsed = parse_hunk_header(hdr);
+                let (raw_old_start, raw_new_start) = match header_parsed {
+                    Some((os, _, ns, _)) => (os, ns),
+                    None => (1, 1),
+                };
+
+                // 计算到 actual_first 为止的行号偏移
+                let mut old_line = raw_old_start;
+                let mut new_line = raw_new_start;
+                for (i, (prefix, _)) in lines.iter().enumerate() {
+                    if i == actual_first {
+                        break;
+                    }
+                    // '\\' 行不计入行号偏移
+                    match prefix {
+                        ' ' | '-' => old_line += 1,
+                        _ => {}
+                    }
+                    match prefix {
+                        ' ' | '+' => new_line += 1,
+                        _ => {}
+                    }
+                }
+
+                // 计算 sub_hunk 中的行数（"\ No newline" 行不计入）
+                let mut old_cnt = 0u32;
+                let mut new_cnt = 0u32;
+                for (prefix, _) in &sub_lines {
+                    if *prefix == '\\' {
+                        continue; // "\ No newline" 不计入行数
+                    }
+                    match prefix {
+                        ' ' | '-' => old_cnt += 1,
+                        _ => {}
+                    }
+                    match prefix {
+                        ' ' | '+' => new_cnt += 1,
+                        _ => {}
+                    }
+                }
+
+                // 输出 @@ 头
+                patch.push_str(&format!("@@ -{},{} +{},{} @@\n", old_line, old_cnt, new_line, new_cnt));
+
+                // 输出行内容（确保前缀正确：上下文行必须以空格开头）
+                for (prefix, content) in &sub_lines {
+                    if *prefix == '\\' {
+                        // "\ No newline at end of file" 保持原样
+                        patch.push_str(content);
+                    } else if *prefix == ' ' {
+                        // 上下文行：确保以空格开头
+                        if content.starts_with(' ') {
+                            patch.push_str(content);
+                        } else {
+                            patch.push(' ');
+                            patch.push_str(content);
+                        }
+                    } else {
+                        // +/- 行：content 已包含前缀，直接输出
+                        patch.push_str(content);
+                    }
+                    patch.push('\n');
+                }
+            }
+        }
+
+        Ok(patch)
+    }
+
+    /// 将补丁应用到暂存区（或反向应用到工作区）
+    fn apply_patch_to_index(workdir: &std::path::Path, patch: &str, reverse: bool) -> Result<()> {
+        Self::apply_patch(workdir, patch, reverse, true)
+    }
+
+    /// 将补丁应用到工作目录（不修改暂存区）
+    fn apply_patch_to_workdir(workdir: &std::path::Path, patch: &str, reverse: bool) -> Result<()> {
+        Self::apply_patch(workdir, patch, reverse, false)
+    }
+
+    /// 通用补丁应用
+    fn apply_patch(workdir: &std::path::Path, patch: &str, reverse: bool, cached: bool) -> Result<()> {
+        // 调试：输出补丁内容
+        log::debug!("应用补丁 (reverse={}, cached={}):\n{}", reverse, cached, patch);
+
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("-C").arg(workdir);
+        cmd.arg("apply");
+
+        if reverse {
+            cmd.arg("-R");
+        }
+        cmd.arg("--unidiff-zero");
+        if cached {
+            cmd.arg("--cached");
+        }
+
+        let mut child = cmd
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("执行 git apply 失败: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(patch.as_bytes())?;
+            stdin.flush()?;
+        }
+
+        let output = child.wait_with_output()
+            .map_err(|e| anyhow::anyhow!("等待 git apply 完成失败: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // 将补丁内容包含在错误信息中，便于调试
+            let patch_preview: String = patch.lines().take(30).enumerate()
+                .map(|(i, l)| format!("{:>4}: {}", i + 1, l))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!("git apply 失败: {}\n--- 补丁内容 ---\n{}", stderr, patch_preview);
+        }
+
+        Ok(())
+    }
+}
+
+/// 解析 hunk header: @@ -old_start,old_count +new_start,new_count @@
+fn parse_hunk_header(header: &str) -> Option<(u32, u32, u32, u32)> {
+    // 格式: @@ -old_start,old_count +new_start,new_count @@
+    // 去掉 @@ 前缀
+    let s = header.trim_start_matches('@').trim_start_matches('@').trim();
+    // 找到第二个 @@
+    let parts: Vec<&str> = s.split("@@").collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let range_part = parts[0].trim();
+    // range_part 格式: -old_start,old_count +new_start,new_count
+    let ranges: Vec<&str> = range_part.split_whitespace().collect();
+    if ranges.len() < 2 {
+        return None;
+    }
+    // 解析 -old_start,old_count
+    let old_part = ranges[0].strip_prefix('-')?;
+    let old_parts: Vec<&str> = old_part.split(',').collect();
+    let old_start: u32 = old_parts[0].parse().ok()?;
+    let old_count: u32 = old_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
+
+    // 解析 +new_start,new_count
+    let new_part = ranges[1].strip_prefix('+')?;
+    let new_parts: Vec<&str> = new_part.split(',').collect();
+    let new_start: u32 = new_parts[0].parse().ok()?;
+    let new_count: u32 = new_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
+
+    Some((old_start, old_count, new_start, new_count))
 }
 
 #[cfg(test)]

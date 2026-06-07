@@ -303,3 +303,153 @@ export async function getCommitFileDiff(
 ): Promise<string> {
   return invoke<string>("get_commit_file_diff", { repoPath, commitId, filePath });
 }
+
+// ===== 丢弃更改和暂存 hunk 命令 =====
+
+/** 暂存指定 hunk 的更改 */
+export async function stageHunk(
+  repoPath: string,
+  filePath: string,
+  hunkIndex: number
+): Promise<string> {
+  return invoke<string>("stage_hunk", { repoPath, filePath, hunkIndex });
+}
+
+/** 丢弃文件的所有更改 */
+export async function discardFile(
+  repoPath: string,
+  filePath: string
+): Promise<string> {
+  return invoke<string>("discard_file", { repoPath, filePath });
+}
+
+/** 丢弃指定 hunk 的更改 */
+export async function discardHunk(
+  repoPath: string,
+  filePath: string,
+  hunkIndex: number
+): Promise<string> {
+  return invoke<string>("discard_hunk", { repoPath, filePath, hunkIndex });
+}
+
+/** 丢弃指定行的更改 */
+export async function discardLines(
+  repoPath: string,
+  filePath: string,
+  startLine: number,
+  endLine: number
+): Promise<string> {
+  return invoke<string>("discard_lines", { repoPath, filePath, startLine, endLine });
+}
+
+/** 读取工作区文件内容（用于编辑模式） */
+export async function readWorkingFile(
+  repoPath: string,
+  filePath: string
+): Promise<string> {
+  return invoke<string>("read_working_file", { repoPath, filePath });
+}
+
+/** 写入工作区文件内容（用于编辑模式保存） */
+export async function writeWorkingFile(
+  repoPath: string,
+  filePath: string,
+  content: string
+): Promise<string> {
+  return invoke<string>("write_working_file", { repoPath, filePath, content });
+}
+
+/** 选中行数据结构：hunkIndex + 该 hunk 内的行索引列表 */
+export interface LineSelection {
+  hunkIndex: number;
+  lineIndices: number[];
+}
+
+/** 暂存选中的行 */
+export async function stageLines(
+  repoPath: string,
+  filePath: string,
+  selections: LineSelection[]
+): Promise<string> {
+  return invoke<string>("stage_lines", { repoPath, filePath, selections });
+}
+
+/** 丢弃选中的行 */
+export async function discardLinesByIndices(
+  repoPath: string,
+  filePath: string,
+  selections: LineSelection[]
+): Promise<string> {
+  return invoke<string>("discard_lines_by_indices", { repoPath, filePath, selections });
+}
+
+/** 获取已暂存文件的差异（HEAD vs 暂存区） */
+export async function getStagedDiff(
+  repoPath: string,
+  filePath: string
+): Promise<string> {
+  return invoke<string>("get_staged_diff", { repoPath, filePath });
+}
+
+/** 取消暂存选中的行（从暂存区移除） */
+export async function unstageLines(
+  repoPath: string,
+  filePath: string,
+  selections: LineSelection[]
+): Promise<string> {
+  return invoke<string>("unstage_lines", { repoPath, filePath, selections });
+}
+
+// ===== 标签管理命令 =====
+
+/** 创建轻量标签 */
+export async function createLightweightTag(
+  repoPath: string,
+  name: string,
+  commitId?: string
+): Promise<string> {
+  return invoke<string>("create_lightweight_tag", { repoPath, name, commitId: commitId || null });
+}
+
+/** 创建附注标签 */
+export async function createAnnotatedTag(
+  repoPath: string,
+  name: string,
+  message: string,
+  commitId?: string
+): Promise<string> {
+  return invoke<string>("create_annotated_tag", { repoPath, name, message, commitId: commitId || null });
+}
+
+/** 删除本地标签 */
+export async function deleteTag(
+  repoPath: string,
+  name: string
+): Promise<string> {
+  return invoke<string>("delete_tag", { repoPath, name });
+}
+
+/** 推送标签到远程 */
+export async function pushTag(
+  repoPath: string,
+  name: string,
+  remote?: string
+): Promise<string> {
+  return invoke<string>("push_tag", { repoPath, name, remote: remote || null });
+}
+
+/** 删除远程标签 */
+export async function deleteRemoteTag(
+  repoPath: string,
+  name: string,
+  remote?: string
+): Promise<string> {
+  return invoke<string>("delete_remote_tag", { repoPath, name, remote: remote || null });
+}
+
+/** 列出所有标签 */
+export async function listTags(
+  repoPath: string
+): Promise<string[]> {
+  return invoke<string[]>("list_tags", { repoPath });
+}

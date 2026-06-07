@@ -6,3 +6,5 @@ pub mod repo;
 pub mod status;
 pub mod branch;
 pub mod remote;
+pub mod discard;
+pub mod tag;

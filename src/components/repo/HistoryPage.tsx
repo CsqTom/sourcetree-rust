@@ -7,10 +7,14 @@
  *     上：选中提交的详细信息
  *     下：此次提交的文件列表（可点击）
  *   右侧（可拖拽）：选中文件的变更内容（默认打开第一个文件）
+ *
+ * 右键菜单功能：
+ * - 在提交上右键可创建轻量标签或附注标签
  */
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import type { CommitEntry } from "@/services/git";
+import { createLightweightTag, createAnnotatedTag } from "@/services/git";
 import CommitGraph from "./CommitGraph";
 import DiffPanel from "./DiffPanel";
 
@@ -25,6 +29,8 @@ interface HistoryPageProps {
   selectedCommitFile: string | null;
   /** 选中的提交文件的变更内容 */
   commitFileDiff: string;
+  /** 仓库路径（用于标签操作） */
+  repoPath: string;
   /** 选择提交查看详情 */
   onSelectCommit: (commit: CommitEntry) => void;
   /** 选择提交内的某个文件查看变更 */
@@ -33,6 +39,8 @@ interface HistoryPageProps {
   onLoadMore: () => void;
   /** 是否正在加载更多 */
   loadingMore: boolean;
+  /** 标签创建成功后的回调（用于刷新数据） */
+  onTagCreated?: () => void;
 }
 
 const SCROLL_THRESHOLD = 80;
@@ -53,17 +61,19 @@ export default function HistoryPage({
   commitFiles,
   selectedCommitFile,
   commitFileDiff,
+  repoPath,
   onSelectCommit,
   onSelectCommitFile,
   onLoadMore,
   loadingMore,
+  onTagCreated,
 }: HistoryPageProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // ===== 可拖动分隔条状态 =====
   const containerRef = useRef<HTMLDivElement>(null);
-  const [topRatio, setTopRatio] = useState(0.5); // 上/下 比例
-  const [leftRatio, setLeftRatio] = useState(0.5); // 左/右 比例
+  const [topRatio, setTopRatio] = useState(0.5);
+  const [leftRatio, setLeftRatio] = useState(0.5);
 
   const dragRef = useRef<{
     type: "horizontal" | "vertical";
@@ -133,6 +143,84 @@ export default function HistoryPage({
     return () => el.removeEventListener("scroll", handleScroll);
   }, [handleScroll]);
 
+  // ===== 右键上下文菜单状态 =====
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    commit: CommitEntry;
+  } | null>(null);
+
+  // ===== 标签创建对话框状态 =====
+  const [tagDialog, setTagDialog] = useState<{
+    type: "lightweight" | "annotated";
+    commit: CommitEntry;
+  } | null>(null);
+  const [tagName, setTagName] = useState("");
+  const [tagMessage, setTagMessage] = useState("");
+  const [creatingTag, setCreatingTag] = useState(false);
+
+  // 关闭上下文菜单
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // 点击页面其他位置关闭上下文菜单
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = (e: MouseEvent) => {
+      // 检查点击是否在上下文菜单内部
+      const target = e.target as HTMLElement;
+      if (!target.closest(".context-menu")) {
+        closeContextMenu();
+      }
+    };
+    // 延迟添加以避免立即触发
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handler);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handler);
+    };
+  }, [contextMenu, closeContextMenu]);
+
+  // 右键菜单：打开轻量标签创建对话框
+  const handleCreateLightweightTag = useCallback(() => {
+    if (!contextMenu) return;
+    setTagDialog({ type: "lightweight", commit: contextMenu.commit });
+    setTagName("");
+    closeContextMenu();
+  }, [contextMenu, closeContextMenu]);
+
+  // 右键菜单：打开附注标签创建对话框
+  const handleCreateAnnotatedTag = useCallback(() => {
+    if (!contextMenu) return;
+    setTagDialog({ type: "annotated", commit: contextMenu.commit });
+    setTagName("");
+    setTagMessage("");
+    closeContextMenu();
+  }, [contextMenu, closeContextMenu]);
+
+  // 执行标签创建
+  const handleCreateTag = useCallback(async () => {
+    if (!tagDialog || !tagName.trim()) return;
+    setCreatingTag(true);
+    try {
+      if (tagDialog.type === "lightweight") {
+        await createLightweightTag(repoPath, tagName.trim(), tagDialog.commit.id);
+      } else {
+        await createAnnotatedTag(repoPath, tagName.trim(), tagMessage.trim() || tagName.trim(), tagDialog.commit.id);
+      }
+      setTagDialog(null);
+      onTagCreated?.();
+    } catch (e) {
+      console.error("创建标签失败:", e);
+      alert("创建标签失败: " + e);
+    } finally {
+      setCreatingTag(false);
+    }
+  }, [tagDialog, tagName, tagMessage, repoPath, onTagCreated]);
+
   // ===== 格式化日期（中文） =====
   const formatDate = (ts: number) => {
     const d = new Date(ts * 1000);
@@ -154,6 +242,9 @@ export default function HistoryPage({
           commits={commits}
           selectedId={selectedCommit?.id ?? null}
           onSelect={onSelectCommit}
+          onContextMenu={(commit, e) => {
+            setContextMenu({ x: e.clientX, y: e.clientY, commit });
+          }}
         />
         {loadingMore && (
           <div className="px-3 py-2 text-xs text-muted-foreground text-center">
@@ -292,6 +383,105 @@ export default function HistoryPage({
           </div>
         )}
       </div>
+
+      {/* ===== 右键上下文菜单 ===== */}
+      {contextMenu && (
+        <div
+          className="context-menu fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border truncate max-w-[200px]">
+            {contextMenu.commit.id.slice(0, 7)} - {contextMenu.commit.message?.slice(0, 30)}
+          </div>
+          <button
+            onClick={handleCreateLightweightTag}
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent flex items-center gap-2"
+          >
+            <svg className="w-3.5 h-3.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+              <path d="M7 7h.01" />
+            </svg>
+            创建轻量标签
+          </button>
+          <button
+            onClick={handleCreateAnnotatedTag}
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-accent flex items-center gap-2"
+          >
+            <svg className="w-3.5 h-3.5 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+            </svg>
+            创建附注标签
+          </button>
+        </div>
+      )}
+
+      {/* ===== 标签创建对话框（遮罩层） ===== */}
+      {tagDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          onClick={() => setTagDialog(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-lg shadow-xl p-4 w-[400px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-medium mb-3">
+              {tagDialog.type === "lightweight" ? "创建轻量标签" : "创建附注标签"}
+            </h3>
+
+            {/* 目标提交信息 */}
+            <div className="mb-3 text-[10px] text-muted-foreground">
+              目标提交：{tagDialog.commit.id.slice(0, 7)} - {tagDialog.commit.message?.slice(0, 50)}
+            </div>
+
+            {/* 标签名称 */}
+            <div className="mb-3">
+              <label className="text-[10px] text-muted-foreground block mb-1">标签名称</label>
+              <input
+                type="text"
+                value={tagName}
+                onChange={(e) => setTagName(e.target.value)}
+                placeholder="输入标签名称（如 v1.0.0）"
+                className="w-full px-2.5 py-1.5 text-xs rounded border border-input bg-background outline-none focus:border-primary"
+                autoFocus
+              />
+            </div>
+
+            {/* 附注标签消息 */}
+            {tagDialog.type === "annotated" && (
+              <div className="mb-3">
+                <label className="text-[10px] text-muted-foreground block mb-1">标签消息（可选）</label>
+                <textarea
+                  value={tagMessage}
+                  onChange={(e) => setTagMessage(e.target.value)}
+                  placeholder="输入标签描述信息..."
+                  rows={3}
+                  className="w-full px-2.5 py-1.5 text-xs rounded border border-input bg-background outline-none focus:border-primary resize-none"
+                />
+              </div>
+            )}
+
+            {/* 操作按钮 */}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setTagDialog(null)}
+                className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateTag}
+                disabled={creatingTag || !tagName.trim()}
+                className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              >
+                {creatingTag ? "创建中..." : "创建"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

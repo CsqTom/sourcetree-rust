@@ -7,7 +7,7 @@
  *   右侧：根据导航选择切换子页（FileStatus / History / Search）
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getStatus,
   getRepoSummary,
@@ -24,6 +24,15 @@ import {
   pushRemote,
   getCommitFiles,
   getCommitFileDiff,
+  discardFile,
+  discardHunk,
+  stageHunk,
+  readWorkingFile,
+  writeWorkingFile,
+  stageLines,
+  discardLinesByIndices,
+  getStagedDiff,
+  unstageLines,
 } from "@/services/git";
 import { useRepoStore, useSelectionStore } from "@/stores";
 import type { FileStatus, RepoSummary, CommitEntry } from "@/services/git";
@@ -111,6 +120,9 @@ export default function RepositoryPage() {
     if (repoPath) refreshAll();
   }, [repoPath, refreshAll]);
 
+  // 记录最后一次点击文件来自已暂存还是未暂存列表
+  const lastClickFromStagedRef = useRef(false);
+
   /** 暂存单个文件 */
   const handleStage = async (path: string) => {
     try {
@@ -148,12 +160,21 @@ export default function RepositoryPage() {
   };
 
   /** 查看差异 */
-  const handleShowDiff = async (path: string) => {
+  const handleShowDiff = async (path: string, fromStaged?: boolean) => {
     setSelectedFile(path);
     setSelectedCommit(null);
+    // 记录点击来源，供刷新时使用
+    lastClickFromStagedRef.current = !!fromStaged;
     try {
-      const diff = await getFileDiff(repoPath, path);
-      setSelectedDiff(diff);
+      if (fromStaged) {
+        // 点击来自已暂存文件列表 → 显示已暂存的差异（HEAD vs 暂存区）
+        const diff = await getStagedDiff(repoPath, path);
+        setSelectedDiff(diff);
+      } else {
+        // 点击来自未暂存文件列表 → 显示工作区差异（暂存区 vs 工作区）
+        const diff = await getFileDiff(repoPath, path);
+        setSelectedDiff(diff);
+      }
     } catch {
       setSelectedDiff("无法加载差异");
     }
@@ -272,6 +293,141 @@ export default function RepositoryPage() {
       setLoadingMore(false);
     }
   }, [repoPath, loadingMore, commitOffset]);
+
+  // ===== 丢弃更改操作 =====
+
+  /** 丢弃文件的所有更改 */
+  const handleDiscardFile = async (filePath: string) => {
+    try {
+      await discardFile(repoPath, filePath);
+      await refreshAll();
+    } catch (e) {
+      console.error("丢弃文件失败:", e);
+      alert("丢弃文件失败: " + e);
+    }
+  };
+
+  /** 丢弃指定 hunk 的更改 */
+  const handleDiscardHunk = async (filePath: string, hunkIndex: number) => {
+    try {
+      await discardHunk(repoPath, filePath, hunkIndex);
+      // 刷新差异内容
+      setSelectedFile(filePath);
+      const diff = await getFileDiff(repoPath, filePath);
+      setSelectedDiff(diff);
+    } catch (e) {
+      console.error("丢弃 hunk 失败:", e);
+      alert("丢弃 hunk 失败: " + e);
+    }
+  };
+
+  /** 暂存指定 hunk 的更改 */
+  const handleStageHunk = async (filePath: string, hunkIndex: number) => {
+    try {
+      await stageHunk(repoPath, filePath, hunkIndex);
+      await refreshAll();
+      // 刷新差异内容
+      setSelectedFile(filePath);
+      const diff = await getFileDiff(repoPath, filePath);
+      setSelectedDiff(diff);
+    } catch (e) {
+      console.error("暂存 hunk 失败:", e);
+      alert("暂存 hunk 失败: " + e);
+    }
+  };
+
+  /** 暂存选中的行 */
+  const handleStageLines = async (filePath: string, selections: { hunkIndex: number; lineIndices: number[] }[]) => {
+    try {
+      await stageLines(repoPath, filePath, selections);
+      await refreshAll();
+      // 刷新差异内容
+      setSelectedFile(filePath);
+      const diff = await getFileDiff(repoPath, filePath);
+      setSelectedDiff(diff);
+    } catch (e) {
+      console.error("暂存选中行失败:", e);
+      alert("暂存选中行失败: " + e);
+    }
+  };
+
+  /** 丢弃选中的行 */
+  const handleDiscardLines = async (filePath: string, selections: { hunkIndex: number; lineIndices: number[] }[]) => {
+    try {
+      await discardLinesByIndices(repoPath, filePath, selections);
+      // 刷新差异内容
+      setSelectedFile(filePath);
+      const diff = await getFileDiff(repoPath, filePath);
+      setSelectedDiff(diff);
+    } catch (e) {
+      console.error("丢弃选中行失败:", e);
+      alert("丢弃选中行失败: " + e);
+    }
+  };
+
+  /** 取消暂存选中行 */
+  const handleUnstageLines = async (filePath: string, selections: { hunkIndex: number; lineIndices: number[] }[]) => {
+    try {
+      await unstageLines(repoPath, filePath, selections);
+      // 刷新文件状态
+      await refreshAll();
+      // 重新加载已暂存差异
+      setSelectedFile(filePath);
+      const diff = await getStagedDiff(repoPath, filePath);
+      setSelectedDiff(diff);
+    } catch (e) {
+      console.error("取消暂存选中行失败:", e);
+      alert("取消暂存选中行失败: " + e);
+    }
+  };
+
+  // ===== 文件内容读写（编辑模式） =====
+
+  /** 刷新当前选中文件的差异 */
+  const handleRefreshDiff = useCallback(async () => {
+    if (!selectedFile) return;
+    try {
+      await refreshAll();
+      // 根据点击来源获取对应的差异
+      if (lastClickFromStagedRef.current) {
+        const diff = await getStagedDiff(repoPath, selectedFile);
+        setSelectedDiff(diff);
+      } else {
+        const diff = await getFileDiff(repoPath, selectedFile);
+        setSelectedDiff(diff);
+      }
+    } catch (e) {
+      console.error("刷新差异失败:", e);
+    }
+  }, [selectedFile, repoPath, refreshAll]);
+
+  /** 读取工作区文件内容 */
+  const handleReadFileContent = async (filePath: string): Promise<string> => {
+    return readWorkingFile(repoPath, filePath);
+  };
+
+  /** 保存编辑后的文件内容 */
+  const handleSaveFileContent = async (filePath: string, content: string): Promise<void> => {
+    await writeWorkingFile(repoPath, filePath, content);
+    // 保存后刷新文件状态
+    await refreshAll();
+    // 刷新差异
+    const diff = await getFileDiff(repoPath, filePath);
+    setSelectedDiff(diff);
+  };
+
+  // ===== 标签操作回调（标签创建后刷新） =====
+
+  /** 标签创建成功后刷新提交历史 */
+  const handleTagCreated = useCallback(async () => {
+    if (!repoPath) return;
+    try {
+      const commitData = await getRecentCommits(repoPath);
+      setCommits(commitData);
+    } catch (e) {
+      console.error("刷新提交历史失败:", e);
+    }
+  }, [repoPath]);
 
   /** 分类文件 */
   const stagedFiles = files.filter((f) => f.stage_status);
@@ -567,6 +723,15 @@ export default function RepositoryPage() {
             onStageAll={handleStageAll}
             onUnstageAll={handleUnstageAll}
             onCommit={handleCommit}
+            onDiscardFile={handleDiscardFile}
+            onDiscardHunk={handleDiscardHunk}
+            onStageHunk={handleStageHunk}
+            onStageLines={handleStageLines}
+            onDiscardLines={handleDiscardLines}
+            onUnstageLines={handleUnstageLines}
+            onRefreshDiff={handleRefreshDiff}
+            onReadFileContent={handleReadFileContent}
+            onSaveFileContent={handleSaveFileContent}
           />
         )}
         {activeNav === "workspace" && activeWorkspaceTab === "history" && (
@@ -576,10 +741,12 @@ export default function RepositoryPage() {
             commitFiles={commitFiles}
             selectedCommitFile={selectedCommitFile}
             commitFileDiff={commitFileDiff}
+            repoPath={repoPath}
             onSelectCommit={loadCommitDetail}
             onSelectCommitFile={handleCommitFileSelect}
             onLoadMore={loadMoreCommits}
             loadingMore={loadingMore}
+            onTagCreated={handleTagCreated}
           />
         )}
         {activeNav === "workspace" && activeWorkspaceTab === "search" && (

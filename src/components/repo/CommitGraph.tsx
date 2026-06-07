@@ -299,12 +299,15 @@ interface CommitGraphProps {
   commits: CommitEntry[];
   selectedId: string | null;
   onSelect: (commit: CommitEntry) => void;
+  /** 右键点击提交时的回调 */
+  onContextMenu?: (commit: CommitEntry, e: React.MouseEvent) => void;
 }
 
 export default function CommitGraph({
   commits,
   selectedId,
   onSelect,
+  onContextMenu,
 }: CommitGraphProps) {
   // 1. 按时间逆序排列（从新到旧）
   const sortedCommits = useMemo(
@@ -354,6 +357,10 @@ export default function CommitGraph({
             <div
               key={commit.id}
               onClick={() => onSelect(commit)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onContextMenu?.(commit, e);
+              }}
               className={`relative flex items-center cursor-pointer hover:bg-blue-500/20 ${
                 isSelected ? "row-selected" : ""
               }`}
