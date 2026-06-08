@@ -62,7 +62,7 @@ export function FileStatusContent({
   const [diffMode, setDiffMode] = useState<"read" | "edit">("edit")
   const [lastClickFromStaged, setLastClickFromStaged] = useState(false)
   const [leftPaneWidth, setLeftPaneWidth] = useState(288) // 默认 72 * 4 = 288px
-  const [commitAreaHeight, setCommitAreaHeight] = useState(120)
+  const [commitAreaHeight, setCommitAreaHeight] = useState(150) // 提交区域高度
   const [stagedAreaHeight, setStagedAreaHeight] = useState(40) // 百分比
   const [isDraggingVertical, setIsDraggingVertical] = useState(false)
   const [isDraggingStaged, setIsDraggingStaged] = useState(false)
@@ -158,7 +158,7 @@ export function FileStatusContent({
       {/* 左侧：暂存文件 + 未暂存文件 + 提交区域 */}
       <div className="border-r border-border flex flex-col min-h-0 shrink-0" style={{ width: leftPaneWidth }} ref={leftPaneRef}>
         {/* 暂存文件区域 */}
-        <div className="overflow-y-auto border-b border-border min-h-0" style={{ flexBasis: `${stagedAreaHeight}%` }}>
+        <div className="overflow-y-auto min-h-0 shrink-0" style={{ height: `${stagedAreaHeight}%` }}>
           <div className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground bg-card flex items-center justify-between sticky top-0 z-10 border-b border-border">
             <span>已暂存文件（{stagedFiles.length}）</span>
             {stagedFiles.length > 0 && (
@@ -239,19 +239,19 @@ export function FileStatusContent({
           )}
         </div>
 
-        {/* 提交信息区域 */}
-        <div className="border-t border-border shrink-0" style={{ height: commitAreaHeight }}>
-          <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border bg-muted/10">
+        {/* 提交信息区域 - 固定在底部 */}
+        <div className="border-t border-border shrink-0 bg-card flex flex-col" style={{ height: commitAreaHeight }}>
+          <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-b border-border bg-muted/10 shrink-0">
             csq &lt;704879647@qq.com&gt;
           </div>
-          <div className="px-3 py-2 h-full flex flex-col">
+          <div className="px-3 py-2 flex-1 flex flex-col min-h-0">
             <textarea
               value={commitMsg}
               onChange={(e) => setCommitMsg(e.target.value)}
               placeholder="输入提交信息..."
-              className="flex-1 w-full px-2 py-1.5 text-xs rounded border border-input bg-background outline-none resize-none focus:border-primary"
+              className="flex-1 w-full px-2 py-1.5 text-xs rounded border border-input bg-background outline-none resize-none focus:border-primary min-h-0"
             />
-            <div className="flex items-center justify-between mt-1.5">
+            <div className="flex items-center justify-between mt-1.5 shrink-0">
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-1 text-[10px] text-muted-foreground cursor-pointer">
                   <input type="checkbox" className="rounded" /> 立即推送
