@@ -37,6 +37,7 @@ pub fn run() {
             commands::status::get_older_commits,
             // 分支
             commands::status::list_branches,
+            commands::status::list_remote_branches,
             commands::status::get_current_branch,
             commands::status::get_repo_summary,
             commands::status::get_commit_files,

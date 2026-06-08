@@ -7,9 +7,8 @@
 
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { tauriCommands } from '@/lib/tauri/commands'
-import { useTabStore } from '@/stores'
 import { useRepoData, useRepoMutations, useFileDiff, useAutoFetch } from '@/hooks/useRepo'
 import { FileStatusContent } from '@/components/repo/FileStatusContent'
 import { HistoryContent } from '@/components/repo/HistoryContent'
@@ -26,11 +25,6 @@ function RepoLayout() {
   const { repoId } = Route.useParams()
   const repoPath = decodeURIComponent(repoId)
   const queryClient = useQueryClient()
-  const { tabs } = useTabStore()
-
-  // 从 Tab 状态获取当前分支
-  const currentTab = tabs.find(t => t.id === repoId)
-  const currentBranch = currentTab?.branch || ''
 
   // 导航状态
   const [activeNav, setActiveNav] = useState<NavSection>('workspace')
@@ -45,6 +39,9 @@ function RepoLayout() {
   const { selectedFile, selectedDiff, showDiff, refreshDiff, clearSelection } = useFileDiff(repoPath)
   useAutoFetch(repoPath)
 
+  // 从 branchTracking 获取当前分支
+  const currentBranch = branchTracking.find(t => t.isCurrent)?.branch || ''
+
   // 提交状态
   const [commitMsg, setCommitMsg] = useState('')
   const [committing, setCommitting] = useState(false)
@@ -54,6 +51,21 @@ function RepoLayout() {
 
   // 侧边栏展开状态
   const [showBranches, setShowBranches] = useState(true)
+  const [showRemotes, setShowRemotes] = useState(true)
+
+  // 右键菜单状态
+  const [branchContextMenu, setBranchContextMenu] = useState<{ x: number; y: number; branch: string; isRemote: boolean } | null>(null)
+
+  // 远程分支列表
+  const [remoteBranches, setRemoteBranches] = useState<string[]>([])
+
+  // 加载远程分支
+  useEffect(() => {
+    if (!repoPath || !showRemotes) return
+    tauriCommands.listRemoteBranches(repoPath)
+      .then(setRemoteBranches)
+      .catch(e => console.error("加载远程分支失败:", e))
+  }, [repoPath, showRemotes])
 
   // ===== 操作处理 =====
 
@@ -78,9 +90,34 @@ function RepoLayout() {
     try {
       await mutations.checkoutBranch.mutateAsync(branch)
     } catch (e: any) {
-      console.error("切换分支失败:", e)
+      const errorMsg = e?.message || e || '未知错误'
+      alert(`切换分支失败: ${errorMsg}\n可能存在未提交的更改或冲突，请先处理后再试。`)
     }
   }
+
+  /** 检出远程分支 */
+  const handleCheckoutRemoteBranch = async (remoteBranch: string) => {
+    // 从远程分支名（如 origin/main）提取分支名（main）
+    const branchName = remoteBranch.includes('/') ? remoteBranch.split('/').slice(1).join('/') : remoteBranch
+    try {
+      await mutations.checkoutBranch.mutateAsync(branchName)
+    } catch (e: any) {
+      const errorMsg = e?.message || e || '未知错误'
+      alert(`检出分支失败: ${errorMsg}\n可能存在冲突，请先解决冲突后再试。`)
+    }
+  }
+
+  /** 右键菜单关闭 */
+  useEffect(() => {
+    if (!branchContextMenu) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".branch-context-menu")) {
+        setBranchContextMenu(null)
+      }
+    }
+    const timer = setTimeout(() => document.addEventListener("mousedown", handler), 0)
+    return () => { clearTimeout(timer); document.removeEventListener("mousedown", handler) }
+  }, [branchContextMenu])
 
   /** Fetch */
   const handleFetch = async () => {
@@ -263,12 +300,16 @@ function RepoLayout() {
               <div className="max-h-40 overflow-y-auto">
                 {branches.map((branch) => {
                   const tracking = branchTracking.find(t => t.branch === branch)
-                  const isCurrent = tracking?.isCurrent || branch === currentBranch
+                  // 只使用 branchTracking 的 isCurrent 判断，避免重复标记
+                  const isCurrent = tracking?.isCurrent ?? (branch === currentBranch)
                   return (
-                    <button
+                    <div
                       key={branch}
-                      onClick={() => !isCurrent && handleSwitchBranch(branch)}
-                      className={`w-full text-left px-4 py-1 text-xs flex items-center gap-2 ${isCurrent ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}`}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setBranchContextMenu({ x: e.clientX, y: e.clientY, branch, isRemote: false })
+                      }}
+                      className={`w-full text-left px-4 py-1 text-xs flex items-center gap-2 ${isCurrent ? 'bg-accent text-foreground font-bold cursor-default' : 'text-muted-foreground hover:bg-accent/50 cursor-default'}`}
                     >
                       <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
                       <span className="truncate">{branch}</span>
@@ -278,20 +319,51 @@ function RepoLayout() {
                           {tracking.behind > 0 && `↓${tracking.behind}`}
                         </span>
                       )}
-                    </button>
+                    </div>
                   )
                 })}
               </div>
             )}
           </div>
 
-          {/* TAGS / REMOTES / STASH 占位 */}
+          {/* TAGS */}
           <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider border-b border-border">
             TAGS
           </div>
-          <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider border-b border-border">
-            REMOTES
+
+          {/* REMOTES */}
+          <div className="border-b border-border">
+            <button
+              onClick={() => setShowRemotes(!showRemotes)}
+              className="w-full px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between hover:bg-accent/30"
+            >
+              REMOTES
+              <svg className={`w-3 h-3 transition-transform ${showRemotes ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+            </button>
+            {showRemotes && (
+              <div className="max-h-40 overflow-y-auto">
+                {remoteBranches.length === 0 ? (
+                  <div className="px-4 py-1 text-xs text-muted-foreground">无远程分支</div>
+                ) : (
+                  remoteBranches.map((branch) => (
+                    <div
+                      key={branch}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setBranchContextMenu({ x: e.clientX, y: e.clientY, branch, isRemote: true })
+                      }}
+                      className="w-full text-left px-4 py-1 text-xs flex items-center gap-2 cursor-pointer text-muted-foreground hover:bg-accent/50"
+                    >
+                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
+                      <span className="truncate">{branch}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
+
+          {/* STASH */}
           <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">
             STASH
           </div>
@@ -339,6 +411,30 @@ function RepoLayout() {
           )}
         </div>
       </div>
+
+      {/* 分支右键菜单 */}
+      {branchContextMenu && (
+        <div
+          className="branch-context-menu fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+          style={{ left: branchContextMenu.x, top: branchContextMenu.y }}
+        >
+          <button
+            disabled={branchContextMenu.branch === currentBranch}
+            onClick={() => {
+              if (branchContextMenu.isRemote) {
+                handleCheckoutRemoteBranch(branchContextMenu.branch)
+              } else {
+                handleSwitchBranch(branchContextMenu.branch)
+              }
+              setBranchContextMenu(null)
+            }}
+            className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${branchContextMenu.branch === currentBranch ? 'text-muted-foreground cursor-not-allowed' : 'hover:bg-accent'}`}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+            检出 {branchContextMenu.branch}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -86,6 +86,10 @@ export const tauriCommands = {
   listBranches: (repoPath: string) =>
     invoke<string[]>('list_branches', { repoPath }),
 
+  /** 获取远程分支列表 */
+  listRemoteBranches: (repoPath: string) =>
+    invoke<string[]>('list_remote_branches', { repoPath }),
+
   /** 获取当前分支名 */
   getCurrentBranch: (repoPath: string) =>
     invoke<string>('get_current_branch', { repoPath }),

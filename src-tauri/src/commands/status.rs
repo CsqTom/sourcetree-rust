@@ -81,6 +81,14 @@ pub fn list_branches(repo_path: String) -> Result<Vec<String>, String> {
     Ok(branches)
 }
 
+/// 获取远程分支列表
+#[tauri::command]
+pub fn list_remote_branches(repo_path: String) -> Result<Vec<String>, String> {
+    let repo = GitService::open(&repo_path).map_err(|e| e.to_string())?;
+    let branches = GitService::list_remote_branches(&repo).map_err(|e| e.to_string())?;
+    Ok(branches)
+}
+
 /// 获取当前分支名
 #[tauri::command]
 pub fn get_current_branch(repo_path: String) -> Result<String, String> {

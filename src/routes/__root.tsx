@@ -93,7 +93,7 @@ function TabBar() {
 function RootComponent() {
   const { theme, toggleTheme } = useThemeStore()
   const { tabs, openTab, setActiveTab } = useTabStore()
-  const { addBookmark } = useBookmarkStore()
+  const { addBookmark, bookmarks } = useBookmarkStore()
   const [backendMsg, setBackendMsg] = useState("正在连接后端…")
   const [backendInfo, setBackendInfo] = useState<string | null>(null)
   const [isRestoring, setIsRestoring] = useState(true)
@@ -140,6 +140,23 @@ function RootComponent() {
         setRestoreErrors(errors)
 
         if (validRepos.length === 0) {
+          // 尝试从书签中打开第一个有效仓库
+          for (const bookmark of bookmarks) {
+            try {
+              const result = await tauriCommands.validateRepoPath(bookmark.path)
+              if (result.valid) {
+                await tauriCommands.openRepo(bookmark.path)
+                const branch = await tauriCommands.getCurrentBranch(bookmark.path)
+                openTab(bookmark.path, branch)
+                setActiveTab(bookmark.path)
+                navigate({ to: '/repo/$repoId', params: { repoId: bookmark.path } as any })
+                setIsRestoring(false)
+                return
+              }
+            } catch (e) {
+              console.warn(`书签「${bookmark.path}」无效:`, e)
+            }
+          }
           setIsRestoring(false)
           return
         }
@@ -162,9 +179,10 @@ function RootComponent() {
           }
         }
 
-        // 激活指定的 tab
-        if (activeExists) {
-          setActiveTab(activePath!)
+        // 激活指定的 tab 并导航
+        if (activePath) {
+          setActiveTab(activePath)
+          navigate({ to: '/repo/$repoId', params: { repoId: activePath } as any })
         }
       } catch (e: any) {
         console.warn("自动恢复仓库失败:", e)

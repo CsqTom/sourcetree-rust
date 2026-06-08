@@ -88,6 +88,23 @@ impl GitService {
         Ok(branches)
     }
 
+    /// 列出所有远程分支名
+    pub fn list_remote_branches(repo: &gix::Repository) -> Result<Vec<String>> {
+        let mut branches = Vec::new();
+        let references = repo.references()?;
+        let iter = references.all()?;
+        for result in iter {
+            let reference = result.map_err(|e| anyhow::anyhow!("{:?}", e))?;
+            if let Some((category, short_name)) = reference.name().category_and_short_name() {
+                if matches!(category, gix::reference::Category::RemoteBranch) {
+                    branches.push(short_name.to_string());
+                }
+            }
+        }
+        branches.sort();
+        Ok(branches)
+    }
+
     /// 获取远程仓库地址
     pub fn remote_url(repo: &gix::Repository) -> Result<Option<String>> {
         let remote = repo.find_default_remote(gix::remote::Direction::Fetch);
