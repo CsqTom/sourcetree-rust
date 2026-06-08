@@ -1,11 +1,22 @@
 /**
  * 全局状态管理
+ *
+ * 仅保留纯客户端状态：
+ * - 主题偏好（useThemeStore）
+ * - Tab 标签管理（useTabStore）
+ * - 书签管理（useBookmarkStore）
+ *
+ * 服务端状态（文件列表、提交历史、分支信息等）由 TanStack Query 管理
+ * 仓库路径和分支信息从路由参数 + Query 获取，不再存入 Store
  */
+
 import { create } from "zustand";
 import {
   loadBookmarks,
   saveBookmarks,
   saveTabs,
+  loadTheme,
+  saveTheme,
 } from "@/utils/persist";
 
 // ===== 主题状态 =====
@@ -19,39 +30,19 @@ interface ThemeState {
 }
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  theme: "light",
+  theme: (loadTheme() as Theme) || "light",
   toggleTheme: () =>
     set((state) => {
       const next = state.theme === "light" ? "dark" : "light";
       document.documentElement.classList.toggle("dark", next === "dark");
+      saveTheme(next);
       return { theme: next };
     }),
   setTheme: (theme: Theme) => {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    saveTheme(theme);
     set({ theme });
   },
-}));
-
-// ===== 仓库状态（单仓库，由 TabStore 驱动更新） =====
-
-interface RepoState {
-  isOpen: boolean;
-  currentPath: string | null;
-  currentBranch: string;
-  setRepo: (path: string, branch?: string) => void;
-  updateBranch: (branch: string) => void;
-  closeRepo: () => void;
-}
-
-export const useRepoStore = create<RepoState>((set) => ({
-  isOpen: false,
-  currentPath: null,
-  currentBranch: "",
-  setRepo: (path: string, branch = "") =>
-    set({ isOpen: true, currentPath: path, currentBranch: branch }),
-  updateBranch: (branch: string) => set({ currentBranch: branch }),
-  closeRepo: () =>
-    set({ isOpen: false, currentPath: null, currentBranch: "" }),
 }));
 
 // ===== Tab 状态（多仓库 Tab 管理） =====
@@ -88,9 +79,15 @@ export const useTabStore = create<TabState>((set, get) => ({
     // 如果标签已存在，直接切换
     const existing = state.tabs.find((t) => t.id === id);
     if (existing) {
-      // 同步到 RepoStore
-      useRepoStore.getState().setRepo(path, branch || existing.branch);
-      set({ activeTabId: id });
+      // 如果有新分支信息，更新
+      if (branch && branch !== existing.branch) {
+        set({
+          activeTabId: id,
+          tabs: state.tabs.map(t => t.id === id ? { ...t, branch } : t),
+        })
+      } else {
+        set({ activeTabId: id })
+      }
       return;
     }
 
@@ -98,9 +95,6 @@ export const useTabStore = create<TabState>((set, get) => ({
     const name = repoNameFromPath(path);
     const newTab: Tab = { id, path, name, branch };
     const newTabs = [...state.tabs, newTab];
-
-    // 同步到 RepoStore
-    useRepoStore.getState().setRepo(path, branch);
     set({ tabs: newTabs, activeTabId: id });
   },
 
@@ -109,8 +103,6 @@ export const useTabStore = create<TabState>((set, get) => ({
     const newTabs = state.tabs.filter((t) => t.id !== id);
 
     if (newTabs.length === 0) {
-      // 没有标签了，关闭仓库
-      useRepoStore.getState().closeRepo();
       set({ tabs: [], activeTabId: null });
       return;
     }
@@ -121,20 +113,13 @@ export const useTabStore = create<TabState>((set, get) => ({
       const closedIndex = state.tabs.findIndex((t) => t.id === id);
       const nextIndex = Math.min(closedIndex, newTabs.length - 1);
       newActiveId = newTabs[nextIndex].id;
-      const activeTab = newTabs[nextIndex];
-      useRepoStore.getState().setRepo(activeTab.path, activeTab.branch);
     }
 
     set({ tabs: newTabs, activeTabId: newActiveId });
   },
 
   setActiveTab: (id: string) => {
-    const state = get();
-    const tab = state.tabs.find((t) => t.id === id);
-    if (tab) {
-      useRepoStore.getState().setRepo(tab.path, tab.branch);
-      set({ activeTabId: id });
-    }
+    set({ activeTabId: id });
   },
 
   updateBranch: (id: string, branch: string) => {
@@ -178,20 +163,4 @@ export const useBookmarkStore = create<BookmarkState>((set) => ({
       saveBookmarks(newBookmarks);
       return { bookmarks: newBookmarks };
     }),
-}));
-
-// ===== 文件选择状态 =====
-
-interface SelectionState {
-  selectedFile: string | null;
-  selectedDiff: string;
-  setSelectedFile: (path: string | null) => void;
-  setSelectedDiff: (diff: string) => void;
-}
-
-export const useSelectionStore = create<SelectionState>((set) => ({
-  selectedFile: null,
-  selectedDiff: "",
-  setSelectedFile: (path) => set({ selectedFile: path }),
-  setSelectedDiff: (diff) => set({ selectedDiff: diff }),
 }));

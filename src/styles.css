@@ -70,9 +70,7 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  /* 移除 * 选择器的 border，避免影响 SVG 和布局 */
   html, body {
     @apply h-full overflow-hidden;
   }

@@ -25,7 +25,7 @@
  */
 
 import { useMemo } from "react";
-import type { CommitEntry } from "@/services/git";
+import type { CommitEntry } from "@/lib/tauri/types";
 
 // ===== 分支颜色调色板（10 色，循环使用） =====
 const BRANCH_COLORS = [
@@ -329,12 +329,6 @@ export default function CommitGraph({
 
   return (
     <div className="overflow-y-auto min-h-0">
-      {/* 选中行样式：蓝色背景 + 白色文字 */}
-      <style>{`
-        .row-selected { background-color: #2563eb !important; }
-        .row-selected .cmt-text,
-        .row-selected .cmt-meta { color: white !important; }
-      `}</style>
       {graph.length === 0 ? (
         <div className="px-3 py-8 text-sm text-muted-foreground text-center">
           暂无提交历史
@@ -364,8 +358,8 @@ export default function CommitGraph({
                 e.preventDefault();
                 onContextMenu?.(commit, e);
               }}
-              className={`relative flex items-center cursor-pointer hover:bg-blue-500/20 ${
-                isSelected ? "row-selected" : ""
+              className={`relative flex items-center cursor-pointer transition-colors hover:bg-accent/50 ${
+                isSelected ? "bg-primary/15" : ""
               }`}
             >
               <svg
@@ -482,7 +476,7 @@ export default function CommitGraph({
                         cx={cx}
                         cy={MID_Y}
                         r={DOT_R + 1}
-                        fill={isSelected ? "#2563eb" : color}
+                        fill={isSelected ? "hsl(var(--primary))" : color}
                         stroke="white"
                         strokeWidth={2}
                       />
@@ -499,7 +493,7 @@ export default function CommitGraph({
                       cx={cx}
                       cy={MID_Y}
                       r={DOT_R}
-                      fill={isSelected ? "#2563eb" : color}
+                      fill={isSelected ? "hsl(var(--primary))" : color}
                       stroke="white"
                       strokeWidth={2}
                     />
@@ -518,7 +512,7 @@ export default function CommitGraph({
                       return (
                         <div
                           key={ref.name}
-                          className="inline-flex items-center gap-0.5 rounded-sm bg-white dark:bg-gray-100 px-1 py-0.5 text-[10px] text-black font-mono leading-none shadow-sm border-[1px] border-gray-300 dark:border-gray-400"
+                          className="inline-flex items-center gap-0.5 rounded-sm bg-card px-1 py-0.5 text-[10px] text-card-foreground font-mono leading-none shadow-sm border border-border"
                           title={`${isHead ? "分支" : isAnnotatedTag ? "附注标签" : "标签"}: ${ref.name}`}
                         >
                           {/* 分支图标 */}

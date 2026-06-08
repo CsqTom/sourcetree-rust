@@ -297,7 +297,7 @@ export default function SimpleDiffPanel({
                       {hasSelection && hunkSelectedCount > 0 ? (
                         <button
                           onClick={() => handleUnstageSelected()}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-50"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                           title={`取消暂存选中的${hunkSelectedCount}行，共影响${hunkAffectedCount}行`}
                         >
                           取消暂存选中行 ({hunkSelectedCount}/{hunkAffectedCount})
@@ -305,7 +305,7 @@ export default function SimpleDiffPanel({
                       ) : (
                         <button
                           onClick={() => handleUnstageHunk(hunk.index)}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-600 hover:bg-amber-50"
+                          className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30"
                           title="取消暂存此区块"
                         >
                           取消暂存区块
@@ -319,14 +319,14 @@ export default function SimpleDiffPanel({
                         <>
                           <button
                             onClick={() => handleStageSelected()}
-                            className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 text-green-600 hover:bg-green-50"
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
                             title={`暂存选中的${hunkSelectedCount}行，共影响${hunkAffectedCount}行`}
                           >
                             暂存选中行 ({hunkSelectedCount}/{hunkAffectedCount})
                           </button>
                           <button
                             onClick={() => handleDiscardSelected()}
-                            className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50"
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
                             title={`丢弃选中的${hunkSelectedCount}行，共影响${hunkAffectedCount}行`}
                           >
                             丢弃选中行 ({hunkSelectedCount}/{hunkAffectedCount})
@@ -336,14 +336,14 @@ export default function SimpleDiffPanel({
                         <>
                           <button
                             onClick={() => onStageHunk?.(hunk.index)}
-                            className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 text-green-600 hover:bg-green-50"
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30"
                             title="暂存此区块"
                           >
                             暂存区块
                           </button>
                           <button
                             onClick={() => onDiscardHunk?.(hunk.index)}
-                            className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50"
+                            className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
                             title="丢弃此区块"
                           >
                             丢弃区块
@@ -386,12 +386,12 @@ export default function SimpleDiffPanel({
                         ? "bg-muted/10 text-muted-foreground/60 italic"
                         : line.type === "added"
                         ? isSelected
-                          ? "bg-green-200/70"
-                          : "bg-green-50/60"
+                          ? "bg-green-200/70 dark:bg-green-800/50"
+                          : "bg-green-50/60 dark:bg-green-900/20"
                         : line.type === "removed"
                         ? isSelected
-                          ? "bg-red-200/70"
-                          : "bg-red-50/60"
+                          ? "bg-red-200/70 dark:bg-red-800/50"
+                          : "bg-red-50/60 dark:bg-red-900/20"
                         : "bg-background"
                     } ${isSelectable ? "cursor-pointer" : ""}`}
                   >
@@ -419,9 +419,9 @@ export default function SimpleDiffPanel({
                     <span
                       className={`flex-1 whitespace-pre overflow-hidden text-ellipsis px-1 ${
                         line.type === "added"
-                          ? "text-green-800"
+                          ? "text-green-800 dark:text-green-300"
                           : line.type === "removed"
-                          ? "text-red-800"
+                          ? "text-red-800 dark:text-red-300"
                           : "text-foreground"
                       }`}
                     >

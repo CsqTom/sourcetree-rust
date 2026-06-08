@@ -55,7 +55,7 @@ export default function DiffPanel({
   }
 
   return (
-    <div className="diff-panel h-full overflow-auto text-xs [&_.diff-line]:leading-4">
+    <div className="diff-panel h-full overflow-auto text-xs [&_.diff-line]:leading-4 [&_.diff-gutter]:min-w-[3rem]">
       {files.map((file) => {
         const key = `${file.oldRevision}-${file.newRevision}`;
         return (
@@ -73,6 +73,15 @@ export default function DiffPanel({
           </Diff>
         );
       })}
+      {/* 暗色模式适配 */}
+      <style>{`
+        .dark .diff-panel .diff-hunk-header { background-color: hsl(var(--muted)); }
+        .dark .diff-panel .diff-code-insert { background-color: rgba(34, 197, 94, 0.1); }
+        .dark .diff-panel .diff-code-delete { background-color: rgba(239, 68, 68, 0.1); }
+        .dark .diff-panel .diff-code-insert .diff-code-text { color: #86efac; }
+        .dark .diff-panel .diff-code-delete .diff-code-text { color: #fca5a5; }
+        .dark .diff-panel .diff-gutter { background-color: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
+      `}</style>
     </div>
   );
 }

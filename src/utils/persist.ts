@@ -12,6 +12,7 @@ const KEYS = {
   BOOKMARKS: "sourcetree_bookmarks",
   TABS: "sourcetree_tabs",
   ACTIVE_TAB: "sourcetree_active_tab",
+  THEME: "sourcetree_theme",
 } as const;
 
 // ===== 书签持久化 =====
@@ -74,5 +75,25 @@ export function loadTabs(): {
     return { tabs, activeTabId };
   } catch {
     return { tabs: [], activeTabId: null };
+  }
+}
+
+// ===== 主题持久化 =====
+
+/** 保存主题偏好 */
+export function saveTheme(theme: string): void {
+  try {
+    localStorage.setItem(KEYS.THEME, theme);
+  } catch (e) {
+    console.warn("保存主题失败:", e);
+  }
+}
+
+/** 加载主题偏好 */
+export function loadTheme(): string | null {
+  try {
+    return localStorage.getItem(KEYS.THEME);
+  } catch {
+    return null;
   }
 }
