@@ -62,7 +62,7 @@ export function FileStatusContent({
   const [diffMode, setDiffMode] = useState<"read" | "edit">("edit")
   const [lastClickFromStaged, setLastClickFromStaged] = useState(false)
   const [leftPaneWidth, setLeftPaneWidth] = useState(288) // 默认 72 * 4 = 288px
-  const [commitAreaHeight, setCommitAreaHeight] = useState(150) // 提交区域高度
+  const commitAreaHeight = 150 // 提交区域固定高度
   const [stagedAreaHeight, setStagedAreaHeight] = useState(40) // 百分比
   const [isDraggingVertical, setIsDraggingVertical] = useState(false)
   const [isDraggingStaged, setIsDraggingStaged] = useState(false)

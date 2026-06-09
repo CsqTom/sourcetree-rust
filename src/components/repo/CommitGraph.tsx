@@ -29,8 +29,8 @@ import type { CommitEntry } from "@/lib/tauri/types";
 
 // ===== 分支颜色调色板（10 色，循环使用） =====
 const BRANCH_COLORS = [
-  "#4CAF50", // 绿
   "#2196F3", // 蓝
+  "#4CAF50", // 绿
   "#FF9800", // 橙
   "#9C27B0", // 紫
   "#F44336", // 红

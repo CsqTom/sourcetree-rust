@@ -8,6 +8,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useCallback, useEffect } from 'react'
+import { GitCommit, Download, Upload, RefreshCw, GitBranch, GitMerge, Loader2, FileText, Clock, Search, ChevronRight, GitPullRequest, Circle } from 'lucide-react'
 import { tauriCommands } from '@/lib/tauri/commands'
 import { useRepoData, useRepoMutations, useFileDiff, useAutoFetch } from '@/hooks/useRepo'
 import { FileStatusContent } from '@/components/repo/FileStatusContent'
@@ -201,34 +202,50 @@ function RepoLayout() {
           disabled={committing || stagedFiles.length === 0 || !commitMsg.trim()}
           className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 flex items-center gap-1"
         >
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20V10M18 14L12 10L6 14" /><path d="M21 22H3" /></svg>
+          <GitCommit className="w-4 h-4" />
           提交
         </button>
-        <button onClick={handlePull} className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 14V6C19 4.89543 18.1046 4 17 4H9C7.89543 4 7 4.89543 7 6V14" /><path d="M12 18L19 11L12 4" /><path d="M19 11H5" /></svg>
+        <button
+          onClick={handlePull}
+          disabled={mutations.pullRemote.isPending}
+          className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1 disabled:opacity-40"
+        >
+          {mutations.pullRemote.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Download className="w-4 h-4" />
+          )}
           拉取
           {summary && summary.behind > 0 && (
             <span className="ml-0.5 text-orange-600 text-[10px] font-medium">↓{summary.behind}</span>
           )}
         </button>
-        <button onClick={handlePush} className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 10V18C5 19.1046 5.89543 20 7 20H15C16.1046 20 17 19.1046 17 18V10" /><path d="M12 6L5 13L12 20" /><path d="M5 13H19" /></svg>
+        <button
+          onClick={handlePush}
+          disabled={mutations.pushRemote.isPending}
+          className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1 disabled:opacity-40"
+        >
+          {mutations.pushRemote.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Upload className="w-4 h-4" />
+          )}
           推送
           {summary && summary.ahead > 0 && (
             <span className="ml-0.5 text-green-600 text-[10px] font-medium">↑{summary.ahead}</span>
           )}
         </button>
         <button onClick={handleFetch} className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12H20" /><path d="M4 6H20" /><path d="M4 18H20" /></svg>
+          <RefreshCw className="w-4 h-4" />
           获取
         </button>
         <div className="w-px h-5 bg-border mx-1" />
         <button className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="18" r="3" /><path d="M8.59 16.5L13.42 12.5" /><path d="M15.41 7.5L10.58 11.5" /></svg>
+          <GitBranch className="w-4 h-4" />
           分支
         </button>
         <button className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8V5C18 4.44772 17.5523 4 17 4H3C2.44772 4 2 4.44772 2 5V19C2 19.5523 2.44772 20 3 20H17C17.5523 20 18 19.5523 18 19V16" /><path d="M22 6L18 10L14 6" /><path d="M18 10V4" /></svg>
+          <GitMerge className="w-4 h-4" />
           合并
         </button>
         <div className="flex-1" />
@@ -239,8 +256,9 @@ function RepoLayout() {
         <button
           onClick={() => refreshDiff()}
           disabled={filesLoading}
-          className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent disabled:opacity-40"
+          className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent disabled:opacity-40 flex items-center gap-1"
         >
+          <RefreshCw className={`w-4 h-4 ${filesLoading ? 'animate-spin' : ''}`} />
           刷新
         </button>
       </header>
@@ -265,7 +283,7 @@ function RepoLayout() {
               onClick={() => { setActiveNav('workspace'); setActiveWorkspaceTab('file-status') }}
               className={`w-full text-left px-4 py-1.5 text-xs flex items-center gap-2 ${activeNav === 'workspace' && activeWorkspaceTab === 'file-status' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}`}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+              <FileText className="w-3.5 h-3.5" />
               文件状态
               {summary && (summary.unstaged_count + summary.staged_count + summary.untracked_count) > 0 && (
                 <span className="ml-auto text-[10px] text-muted-foreground">{summary.unstaged_count + summary.staged_count + summary.untracked_count}</span>
@@ -275,14 +293,14 @@ function RepoLayout() {
               onClick={() => { setActiveNav('workspace'); setActiveWorkspaceTab('history') }}
               className={`w-full text-left px-4 py-1.5 text-xs flex items-center gap-2 ${activeNav === 'workspace' && activeWorkspaceTab === 'history' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}`}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+              <Clock className="w-3.5 h-3.5" />
               历史
             </button>
             <button
               onClick={() => { setActiveNav('workspace'); setActiveWorkspaceTab('search') }}
               className={`w-full text-left px-4 py-1.5 text-xs flex items-center gap-2 ${activeNav === 'workspace' && activeWorkspaceTab === 'search' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}`}
             >
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <Search className="w-3.5 h-3.5" />
               搜索
             </button>
           </div>
@@ -294,7 +312,7 @@ function RepoLayout() {
               className="w-full px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between hover:bg-accent/30"
             >
               BRANCHES
-              <svg className={`w-3 h-3 transition-transform ${showBranches ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+              <ChevronRight className={`w-3 h-3 transition-transform ${showBranches ? 'rotate-90' : ''}`} />
             </button>
             {showBranches && (
               <div className="max-h-40 overflow-y-auto">
@@ -311,7 +329,7 @@ function RepoLayout() {
                       }}
                       className={`w-full text-left px-4 py-1 text-xs flex items-center gap-2 ${isCurrent ? 'bg-accent text-foreground font-bold cursor-default' : 'text-muted-foreground hover:bg-accent/50 cursor-default'}`}
                     >
-                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+                      <GitPullRequest className="w-3 h-3 shrink-0" />
                       <span className="truncate">{branch}</span>
                       {tracking && (tracking.ahead > 0 || tracking.behind > 0) && (
                         <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
@@ -338,7 +356,7 @@ function RepoLayout() {
               className="w-full px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between hover:bg-accent/30"
             >
               REMOTES
-              <svg className={`w-3 h-3 transition-transform ${showRemotes ? 'rotate-90' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6" /></svg>
+              <ChevronRight className={`w-3 h-3 transition-transform ${showRemotes ? 'rotate-90' : ''}`} />
             </button>
             {showRemotes && (
               <div className="max-h-40 overflow-y-auto">
@@ -354,7 +372,7 @@ function RepoLayout() {
                       }}
                       className="w-full text-left px-4 py-1 text-xs flex items-center gap-2 cursor-pointer text-muted-foreground hover:bg-accent/50"
                     >
-                      <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /></svg>
+                      <Circle className="w-3 h-3 shrink-0" />
                       <span className="truncate">{branch}</span>
                     </div>
                   ))
@@ -430,7 +448,7 @@ function RepoLayout() {
             }}
             className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 ${branchContextMenu.branch === currentBranch ? 'text-muted-foreground cursor-not-allowed' : 'hover:bg-accent'}`}
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>
+            <GitPullRequest className="w-3.5 h-3.5" />
             检出 {branchContextMenu.branch}
           </button>
         </div>
