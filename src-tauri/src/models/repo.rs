@@ -70,14 +70,3 @@ pub struct BranchTrackingInfo {
     /// 落后远程的提交数
     pub behind: i32,
 }
-
-/// 书签条目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BookmarkEntry {
-    /// 显示名称
-    pub name: String,
-    /// 仓库路径
-    pub path: String,
-    /// 最近打开时间（Unix 时间戳）
-    pub last_opened: i64,
-}

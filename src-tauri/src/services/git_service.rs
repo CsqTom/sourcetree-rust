@@ -418,27 +418,6 @@ impl GitService {
 
     // ===== 差异操作 =====
 
-    /// 获取文件差异列表（基于状态信息生成）
-    pub fn diff_workdir(repo: &gix::Repository) -> Result<Vec<crate::models::diff::FileDiff>> {
-        let files = Self::status(repo)?;
-        let diffs = files
-            .into_iter()
-            .filter(|f| f.worktree_status.is_some() || f.stage_status.is_some())
-            .map(|f| {
-                let status = f.stage_status.or(f.worktree_status).unwrap_or(ChangeStatus::Modified);
-                crate::models::diff::FileDiff {
-                    old_path: f.path.clone(),
-                    new_path: f.path.clone(),
-                    status,
-                    hunks: Vec::new(),
-                    additions: 0,
-                    deletions: 0,
-                }
-            })
-            .collect();
-        Ok(diffs)
-    }
-
     /// 获取文件差异文本（使用 git diff CLI）
     pub fn diff_file_text(repo: &gix::Repository, path: &str) -> Result<String> {
         let workdir = Self::work_dir(repo)?;
@@ -687,11 +666,6 @@ impl GitService {
         Ok(map)
     }
 
-    /// 检查 gix 是否可用
-    pub fn is_available() -> bool {
-        true
-    }
-
     // ===== 丢弃更改 =====
 
     /// 丢弃文件的所有更改（git checkout -- <file>）
@@ -710,33 +684,6 @@ impl GitService {
         }
         log::info!("已丢弃文件更改: {}", path);
         Ok(())
-    }
-
-    /// 从 diff 文本中提取指定 hunk 的补丁内容
-    fn extract_hunk_patch(diff_text: &str, hunk_index: usize) -> Option<String> {
-        let mut patch = String::new();
-        let mut current_hunk = -1;
-        let mut in_target = false;
-
-        for line in diff_text.lines() {
-            if line.starts_with("@@" ) {
-                current_hunk += 1;
-                in_target = current_hunk == hunk_index as isize;
-                if in_target {
-                    patch.push_str(line);
-                    patch.push('\n');
-                }
-            } else if in_target {
-                // 遇到下一个 hunk 或文件头则停止
-                if line.starts_with("diff --git") || line.starts_with("@@") {
-                    break;
-                }
-                patch.push_str(line);
-                patch.push('\n');
-            }
-        }
-
-        if patch.is_empty() { None } else { Some(patch) }
     }
 
     /// 暂存指定 hunk 的更改（使用 git apply --cached 正向应用 hunk）

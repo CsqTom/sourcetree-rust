@@ -2,13 +2,6 @@
 
 use std::sync::Mutex;
 
-/// 书签条目
-#[derive(Debug, Clone)]
-pub struct Bookmark {
-    pub name: String,
-    pub path: String,
-}
-
 /// 应用全局状态
 pub struct AppState(pub Mutex<InnerState>);
 
@@ -20,8 +13,6 @@ pub struct InnerState {
     pub repo_open: bool,
     /// 当前主题
     pub theme: String,
-    /// 书签列表
-    pub bookmarks: Vec<Bookmark>,
 }
 
 impl AppState {
@@ -30,7 +21,6 @@ impl AppState {
             current_repo_path: None,
             repo_open: false,
             theme: "light".to_string(),
-            bookmarks: Vec::new(),
         }))
     }
 }
