@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/niceties/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "SourceTree Rust",
+  "productName": "sourcetree-rust",
   "version": "0.1.0",
   "identifier": "com.sourcetree-rust.app",
   "build": {

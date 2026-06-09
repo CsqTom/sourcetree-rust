@@ -12,6 +12,24 @@ use std::process::Command;
 use crate::models::diff::{ChangeStatus, FileStatus};
 use crate::models::repo::{BranchTrackingInfo, CommitEntry, RefInfo, RepoSummary};
 
+/// 创建 git 命令，自动添加 Windows 隐藏窗口标志
+///
+/// 在 Windows 上，使用 CREATE_NO_WINDOW 标志防止控制台窗口闪烁
+/// 在其他平台上，直接创建命令
+pub fn create_git_command() -> Command {
+    let mut cmd = Command::new("git");
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW = 0x08000000
+        // 防止在 Windows 上创建控制台窗口
+        cmd.creation_flags(0x08000000);
+    }
+    
+    cmd
+}
+
 /// 行选中数据结构（匹配前端 LineSelection）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -129,12 +147,12 @@ impl GitService {
         let ahead_range = format!("{}..HEAD", upstream);
         let behind_range = format!("HEAD..{}", upstream);
 
-        let ahead_output = Command::new("git")
+        let ahead_output = create_git_command()
             .args(["rev-list", "--count", &ahead_range])
             .current_dir(workdir)
             .output();
 
-        let behind_output = Command::new("git")
+        let behind_output = create_git_command()
             .args(["rev-list", "--count", &behind_range])
             .current_dir(workdir)
             .output();
@@ -188,7 +206,7 @@ impl GitService {
 
     /// 获取分支的上游追踪分支
     fn get_upstream(workdir: &std::path::Path, branch: &str) -> Option<String> {
-        let output = Command::new("git")
+        let output = create_git_command()
             .args(["config", &format!("branch.{}.remote", branch)])
             .current_dir(workdir)
             .output()
@@ -204,7 +222,7 @@ impl GitService {
         }
 
         // 获取 merge 配置
-        let merge_output = Command::new("git")
+        let merge_output = create_git_command()
             .args(["config", &format!("branch.{}.merge", branch)])
             .current_dir(workdir)
             .output()
@@ -231,12 +249,12 @@ impl GitService {
         let ahead_range = format!("{}..{}", upstream, branch);
         let behind_range = format!("{}..{}", branch, upstream);
 
-        let ahead_output = Command::new("git")
+        let ahead_output = create_git_command()
             .args(["rev-list", "--count", &ahead_range])
             .current_dir(workdir)
             .output();
 
-        let behind_output = Command::new("git")
+        let behind_output = create_git_command()
             .args(["rev-list", "--count", &behind_range])
             .current_dir(workdir)
             .output();
@@ -424,7 +442,7 @@ impl GitService {
     /// 获取文件差异文本（使用 git diff CLI）
     pub fn diff_file_text(repo: &gix::Repository, path: &str) -> Result<String> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["diff", "--", path])
@@ -440,7 +458,7 @@ impl GitService {
     /// 等价于: git diff --cached -- <path>
     pub fn diff_cached_text(repo: &gix::Repository, path: &str) -> Result<String> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["diff", "--cached", "--", path])
@@ -456,7 +474,7 @@ impl GitService {
     /// 暂存文件（使用 git add CLI）
     pub fn stage_files(repo: &gix::Repository, paths: &[String]) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = create_git_command();
         cmd.arg("-C").arg(&workdir);
         cmd.arg("add");
         for p in paths {
@@ -475,7 +493,7 @@ impl GitService {
     /// 取消暂存文件（使用 git reset HEAD -- CLI）
     pub fn unstage_files(repo: &gix::Repository, paths: &[String]) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = create_git_command();
         cmd.arg("-C").arg(&workdir);
         cmd.args(["reset", "HEAD", "--"]);
         for p in paths {
@@ -496,7 +514,7 @@ impl GitService {
     /// 提交变更（使用 git commit CLI）
     pub fn commit(repo: &gix::Repository, message: &str) -> Result<String> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["commit", "-m", message])
@@ -509,7 +527,7 @@ impl GitService {
         }
 
         // 获取最新提交 ID
-        let log_output = std::process::Command::new("git")
+        let log_output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["log", "-1", "--format=%H"])
@@ -597,12 +615,11 @@ impl GitService {
     /// 构建提交 SHA → 引用列表的映射（标签 + 分支）
     fn build_ref_map(workdir: &str) -> Result<std::collections::HashMap<String, Vec<RefInfo>>> {
         use std::collections::HashMap;
-        use std::process::Command;
 
         let mut map: HashMap<String, Vec<RefInfo>> = HashMap::new();
 
         // 先处理分支（refs/heads/）
-        let output_heads = Command::new("git")
+        let output_heads = create_git_command()
             .arg("-C")
             .arg(workdir)
             .args([
@@ -630,7 +647,7 @@ impl GitService {
         }
 
         // 再处理标签（refs/tags/），区分轻量标签和附注标签
-        let output_tags = Command::new("git")
+        let output_tags = create_git_command()
             .arg("-C")
             .arg(workdir)
             .args([
@@ -680,7 +697,7 @@ impl GitService {
     /// 丢弃文件的所有更改（git checkout -- <file>）
     pub fn discard_file(repo: &gix::Repository, path: &str) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["checkout", "--", path])
@@ -771,7 +788,7 @@ impl GitService {
         }
 
         // 使用 git apply --cached 应用到暂存区
-        let mut child = std::process::Command::new("git")
+        let mut child = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["apply", "--cached"])
@@ -833,7 +850,7 @@ impl GitService {
         }
 
         // 使用 git apply -R 反向应用
-        let mut child = std::process::Command::new("git")
+        let mut child = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["apply", "-R"])
@@ -923,7 +940,7 @@ impl GitService {
         }
 
         // 应用反向补丁
-        let mut child = std::process::Command::new("git")
+        let mut child = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["apply", "-R"])
@@ -955,7 +972,7 @@ impl GitService {
     /// 创建轻量标签
     pub fn create_lightweight_tag(repo: &gix::Repository, name: &str, commit_id: Option<&str>) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = create_git_command();
         cmd.arg("-C").arg(&workdir);
         cmd.arg("tag");
         cmd.arg(name);
@@ -975,7 +992,7 @@ impl GitService {
     /// 创建附注标签
     pub fn create_annotated_tag(repo: &gix::Repository, name: &str, message: &str, commit_id: Option<&str>) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = create_git_command();
         cmd.arg("-C").arg(&workdir);
         cmd.args(["-c", "user.name=sourcetree-rust"]);
         cmd.args(["-c", "user.email=sourcetree-rust@local"]);
@@ -996,7 +1013,7 @@ impl GitService {
     /// 删除本地标签
     pub fn delete_tag(repo: &gix::Repository, name: &str) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["tag", "-d", name])
@@ -1014,7 +1031,7 @@ impl GitService {
     pub fn push_tag(repo: &gix::Repository, name: &str, remote: Option<&str>) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
         let remote_name = remote.unwrap_or("origin");
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["push", remote_name, name])
@@ -1032,7 +1049,7 @@ impl GitService {
     pub fn delete_remote_tag(repo: &gix::Repository, name: &str, remote: Option<&str>) -> Result<()> {
         let workdir = Self::work_dir(repo)?;
         let remote_name = remote.unwrap_or("origin");
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["push", remote_name, "--delete", name])
@@ -1049,7 +1066,7 @@ impl GitService {
     /// 列出所有标签
     pub fn list_tags(repo: &gix::Repository) -> Result<Vec<String>> {
         let workdir = Self::work_dir(repo)?;
-        let output = std::process::Command::new("git")
+        let output = create_git_command()
             .arg("-C")
             .arg(&workdir)
             .args(["tag", "-l", "--sort=-creatordate"])
@@ -1358,7 +1375,7 @@ impl GitService {
         // 调试：输出补丁内容
         log::debug!("应用补丁 (reverse={}, cached={}):\n{}", reverse, cached, patch);
 
-        let mut cmd = std::process::Command::new("git");
+        let mut cmd = create_git_command();
         cmd.arg("-C").arg(workdir);
         cmd.arg("apply");
 

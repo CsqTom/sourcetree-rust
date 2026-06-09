@@ -2,14 +2,14 @@
 //!
 //! 提供 fetch、pull、push 等远程同步操作
 
-use std::process::Command;
+use crate::services::git_service::create_git_command;
 
 /// Fetch 远程更新
 #[tauri::command]
 pub fn fetch_remote(repo_path: String, remote: Option<String>) -> Result<String, String> {
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
 
-    let child = Command::new("git")
+    let child = create_git_command()
         .args(["fetch", &remote_name])
         .current_dir(&repo_path)
         .stdin(std::process::Stdio::inherit())
@@ -47,7 +47,7 @@ pub fn pull_remote(repo_path: String, remote: Option<String>, branch: Option<Str
         vec!["pull", &remote_name, &branch_name]
     };
 
-    let child = Command::new("git")
+    let child = create_git_command()
         .args(&args)
         .current_dir(&repo_path)
         .stdin(std::process::Stdio::inherit())
@@ -94,7 +94,7 @@ pub fn push_remote(
     }
 
     // 使用 spawn + wait_with_output 以支持 git credential helper 弹窗认证
-    let child = Command::new("git")
+    let child = create_git_command()
         .args(&args)
         .current_dir(&repo_path)
         .stdin(std::process::Stdio::inherit())
@@ -123,7 +123,7 @@ pub fn push_remote(
 /// 克隆仓库
 #[tauri::command]
 pub fn clone_repo(url: String, target_dir: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["clone", &url, &target_dir])
         .output()
         .map_err(|e| format!("执行 git clone 失败: {}", e))?;
@@ -144,7 +144,7 @@ pub fn init_repo(path: String, bare: bool) -> Result<String, String> {
         args.push("--bare");
     }
 
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(&args)
         .current_dir(&path)
         .output()
@@ -161,7 +161,7 @@ pub fn init_repo(path: String, bare: bool) -> Result<String, String> {
 /// 获取远程仓库列表
 #[tauri::command]
 pub fn list_remotes(repo_path: String) -> Result<Vec<serde_json::Value>, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["remote", "-v"])
         .current_dir(&repo_path)
         .output()
@@ -221,7 +221,7 @@ pub fn list_remotes(repo_path: String) -> Result<Vec<serde_json::Value>, String>
 /// 添加远程仓库
 #[tauri::command]
 pub fn add_remote(repo_path: String, name: String, url: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["remote", "add", &name, &url])
         .current_dir(&repo_path)
         .output()
@@ -238,7 +238,7 @@ pub fn add_remote(repo_path: String, name: String, url: String) -> Result<String
 /// 删除远程仓库
 #[tauri::command]
 pub fn remove_remote(repo_path: String, name: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["remote", "remove", &name])
         .current_dir(&repo_path)
         .output()
@@ -255,7 +255,7 @@ pub fn remove_remote(repo_path: String, name: String) -> Result<String, String> 
 /// 修改远程仓库 URL
 #[tauri::command]
 pub fn set_remote_url(repo_path: String, name: String, url: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["remote", "set-url", &name, &url])
         .current_dir(&repo_path)
         .output()

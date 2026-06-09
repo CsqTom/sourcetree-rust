@@ -8,18 +8,19 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, useCallback, useEffect } from 'react'
-import { GitCommit, Download, Upload, RefreshCw, GitBranch, GitMerge, Loader2, FileText, Clock, Search, ChevronRight, GitPullRequest, Circle } from 'lucide-react'
+import { GitCommit, Download, Upload, RefreshCw, GitBranch, GitMerge, Loader2, FileText, Clock, Search, ChevronRight, GitPullRequest, Circle, Terminal } from 'lucide-react'
 import { tauriCommands } from '@/lib/tauri/commands'
 import { useRepoData, useRepoMutations, useFileDiff, useAutoFetch } from '@/hooks/useRepo'
 import { FileStatusContent } from '@/components/repo/FileStatusContent'
 import { HistoryContent } from '@/components/repo/HistoryContent'
 import { SearchContent } from '@/components/repo/SearchContent'
+import { TerminalPanel } from '@/components/repo/TerminalPanel'
 import type { CommitEntry } from '@/lib/tauri/types'
 
 /** 左侧导航区域类型 */
 type NavSection = 'workspace' | 'branches' | 'tags' | 'remotes' | 'stash'
 /** WORKSPACE 子类型 */
-type WorkspaceTab = 'file-status' | 'history' | 'search'
+type WorkspaceTab = 'file-status' | 'history' | 'search' | 'terminal'
 
 /** 仓库布局组件 */
 function RepoLayout() {
@@ -303,6 +304,13 @@ function RepoLayout() {
               <Search className="w-3.5 h-3.5" />
               搜索
             </button>
+            <button
+              onClick={() => { setActiveNav('workspace'); setActiveWorkspaceTab('terminal') }}
+              className={`w-full text-left px-4 py-1.5 text-xs flex items-center gap-2 ${activeNav === 'workspace' && activeWorkspaceTab === 'terminal' ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:bg-accent/50'}`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              终端
+            </button>
           </div>
 
           {/* BRANCHES */}
@@ -426,6 +434,9 @@ function RepoLayout() {
           )}
           {activeNav === 'workspace' && activeWorkspaceTab === 'search' && (
             <SearchContent />
+          )}
+          {activeNav === 'workspace' && activeWorkspaceTab === 'terminal' && (
+            <TerminalPanel workspacePath={repoPath} />
           )}
         </div>
       </div>

@@ -1,6 +1,6 @@
 //! 文件状态和差异命令
 
-use crate::services::git_service::GitService;
+use crate::services::git_service::{create_git_command, GitService};
 
 /// 获取仓库文件状态列表
 #[tauri::command]
@@ -100,9 +100,7 @@ pub fn get_current_branch(repo_path: String) -> Result<String, String> {
 /// 获取单次提交的变更文件列表
 #[tauri::command]
 pub fn get_commit_files(repo_path: String, commit_id: String) -> Result<Vec<serde_json::Value>, String> {
-    use std::process::Command;
-
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["diff-tree", "--no-commit-id", "--name-status", "-r", "--root", &commit_id])
         .current_dir(&repo_path)
         .output()
@@ -135,9 +133,7 @@ pub fn get_commit_files(repo_path: String, commit_id: String) -> Result<Vec<serd
 /// 获取单次提交的差异（对比该提交与其父提交）
 #[tauri::command]
 pub fn get_commit_diff(repo_path: String, commit_id: String) -> Result<String, String> {
-    use std::process::Command;
-
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["show", "--format=", &commit_id])
         .current_dir(&repo_path)
         .output()
@@ -155,9 +151,7 @@ pub fn get_commit_diff(repo_path: String, commit_id: String) -> Result<String, S
 /// 获取某次提交中单个文件的变更内容
 #[tauri::command]
 pub fn get_commit_file_diff(repo_path: String, commit_id: String, file_path: String) -> Result<String, String> {
-    use std::process::Command;
-
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["show", "--format=", &commit_id, "--", &file_path])
         .current_dir(&repo_path)
         .output()

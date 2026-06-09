@@ -2,7 +2,7 @@
 //!
 //! 提供分支创建、切换、删除等操作
 
-use std::process::Command;
+use crate::services::git_service::create_git_command;
 
 /// 获取所有分支的追踪信息（ahead/behind）
 #[tauri::command]
@@ -14,7 +14,7 @@ pub fn get_branch_tracking(repo_path: String) -> Result<Vec<crate::models::repo:
 /// 创建新分支
 #[tauri::command]
 pub fn create_branch(repo_path: String, branch_name: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["branch", &branch_name])
         .current_dir(&repo_path)
         .output()
@@ -31,7 +31,7 @@ pub fn create_branch(repo_path: String, branch_name: String) -> Result<String, S
 /// 切换分支（checkout）
 #[tauri::command]
 pub fn checkout_branch(repo_path: String, branch_name: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["checkout", &branch_name])
         .current_dir(&repo_path)
         .output()
@@ -48,7 +48,7 @@ pub fn checkout_branch(repo_path: String, branch_name: String) -> Result<String,
 /// 创建并切换到新分支
 #[tauri::command]
 pub fn checkout_new_branch(repo_path: String, branch_name: String) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(["checkout", "-b", &branch_name])
         .current_dir(&repo_path)
         .output()
@@ -71,7 +71,7 @@ pub fn delete_branch(repo_path: String, branch_name: String, force: bool) -> Res
     }
     args.push(&branch_name);
 
-    let output = Command::new("git")
+    let output = create_git_command()
         .args(&args)
         .current_dir(&repo_path)
         .output()
