@@ -5,6 +5,7 @@
  * - 主题偏好（useThemeStore）
  * - Tab 标签管理（useTabStore）
  * - 书签管理（useBookmarkStore）
+ * - 终端实例管理（useTerminalStore）
  *
  * 服务端状态（文件列表、提交历史、分支信息等）由 TanStack Query 管理
  * 仓库路径和分支信息从路由参数 + Query 获取，不再存入 Store
@@ -163,4 +164,46 @@ export const useBookmarkStore = create<BookmarkState>((set) => ({
       saveBookmarks(newBookmarks);
       return { bookmarks: newBookmarks };
     }),
+}));
+
+// ===== 终端状态 =====
+
+/**
+ * 终端实例管理
+ * 
+ * 目的：保持终端实例持久化，切换仓库时不销毁
+ * - 每个仓库独立的终端实例
+ * - 终端实例存储在全局状态中
+ * - 切换仓库时切换到对应的终端实例
+ * - 用户可手动清理终端
+ */
+
+interface TerminalState {
+  // 当前激活的终端路径
+  activeTerminalPath: string | null;
+  
+  // 设置当前激活的终端
+  setActiveTerminal: (path: string) => void;
+  
+  // 清理指定终端
+  clearTerminal: (path: string) => void;
+}
+
+export const useTerminalStore = create<TerminalState>((set) => ({
+  activeTerminalPath: null,
+  
+  setActiveTerminal: (path: string) => {
+    set({ activeTerminalPath: path });
+  },
+  
+  clearTerminal: (path: string) => {
+    // 终端清理由 TerminalPanel 组件内部处理
+    // 这里只更新状态
+    set((state) => {
+      if (state.activeTerminalPath === path) {
+        return { activeTerminalPath: null };
+      }
+      return state;
+    });
+  },
 }));

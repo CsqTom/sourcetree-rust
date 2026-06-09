@@ -15,6 +15,7 @@ import { FileStatusContent } from '@/components/repo/FileStatusContent'
 import { HistoryContent } from '@/components/repo/HistoryContent'
 import { SearchContent } from '@/components/repo/SearchContent'
 import { TerminalPanel } from '@/components/repo/TerminalPanel'
+import { useTabStore } from '@/stores'
 import type { CommitEntry } from '@/lib/tauri/types'
 
 /** 左侧导航区域类型 */
@@ -27,6 +28,9 @@ function RepoLayout() {
   const { repoId } = Route.useParams()
   const repoPath = decodeURIComponent(repoId)
   const queryClient = useQueryClient()
+
+  // Tab 状态
+  const { tabs } = useTabStore()
 
   // 导航状态
   const [activeNav, setActiveNav] = useState<NavSection>('workspace')
@@ -397,7 +401,11 @@ function RepoLayout() {
 
         {/* ===== 右侧：内容区域 ===== */}
         <div className="flex-1 flex flex-col min-h-0">
-          {activeNav === 'workspace' && activeWorkspaceTab === 'file-status' && (
+          {/* 文件状态 */}
+          <div 
+            className="flex-1 flex flex-col min-h-0"
+            style={{ display: activeNav === 'workspace' && activeWorkspaceTab === 'file-status' ? 'flex' : 'none' }}
+          >
             <FileStatusContent
               stagedFiles={stagedFiles}
               unstagedFiles={unstagedFiles}
@@ -421,8 +429,13 @@ function RepoLayout() {
               onUnstageLines={(path, selections) => mutations.unstageLines.mutate({ filePath: path, selections })}
               onRefreshDiff={refreshDiff}
             />
-          )}
-          {activeNav === 'workspace' && activeWorkspaceTab === 'history' && (
+          </div>
+          
+          {/* 历史 */}
+          <div 
+            className="flex-1 flex flex-col min-h-0"
+            style={{ display: activeNav === 'workspace' && activeWorkspaceTab === 'history' ? 'flex' : 'none' }}
+          >
             <HistoryContent
               repoPath={repoPath}
               commits={commits}
@@ -431,13 +444,28 @@ function RepoLayout() {
               summary={summary}
               onTagCreated={handleTagCreated}
             />
-          )}
-          {activeNav === 'workspace' && activeWorkspaceTab === 'search' && (
+          </div>
+          
+          {/* 搜索 */}
+          <div 
+            className="flex-1 flex flex-col min-h-0"
+            style={{ display: activeNav === 'workspace' && activeWorkspaceTab === 'search' ? 'flex' : 'none' }}
+          >
             <SearchContent />
-          )}
-          {activeNav === 'workspace' && activeWorkspaceTab === 'terminal' && (
-            <TerminalPanel workspacePath={repoPath} />
-          )}
+          </div>
+          
+          {/* 终端 - 为每个仓库创建独立实例，使用 Tab 状态管理 */}
+          {tabs.map((tab) => (
+            <div 
+              key={tab.path}
+              className="flex-1 flex flex-col min-h-0"
+              style={{ 
+                display: activeNav === 'workspace' && activeWorkspaceTab === 'terminal' && tab.path === repoPath ? 'flex' : 'none' 
+              }}
+            >
+              <TerminalPanel workspacePath={tab.path} />
+            </div>
+          ))}
         </div>
       </div>
 
