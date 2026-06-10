@@ -36,6 +36,15 @@ export function HistoryContent({ repoPath, commits, selectedCommit, onSelectComm
   const PAGE_SIZE = 50
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 内部维护完整的提交列表（支持滚动加载）
+  const [allCommits, setAllCommits] = useState<CommitEntry[]>(commits)
+
+  // 同步外部 commits 到内部状态
+  useEffect(() => {
+    setAllCommits(commits)
+    setCommitOffset(0)
+  }, [commits])
+
   // 面板拖拽
   const containerRef = useRef<HTMLDivElement>(null)
   const [topRatio, setTopRatio] = useState(0.5)
@@ -79,6 +88,8 @@ export function HistoryContent({ repoPath, commits, selectedCommit, onSelectComm
       const olderCommits = await tauriCommands.getOlderCommits(repoPath, PAGE_SIZE, newOffset)
       if (olderCommits.length > 0) {
         setCommitOffset(newOffset)
+        // 将新数据追加到 allCommits
+        setAllCommits(prev => [...prev, ...olderCommits])
       }
     } catch (e) {
       console.error("加载更多提交失败:", e)
@@ -165,7 +176,7 @@ export function HistoryContent({ repoPath, commits, selectedCommit, onSelectComm
       {/* 上：提交历史列表 */}
       <div ref={scrollRef} className="min-h-0 border-b border-border overflow-y-auto select-text" style={{ flexBasis: `${topRatio * 100}%` }}>
         <CommitGraph
-          commits={commits}
+          commits={allCommits}
           selectedId={selectedCommit?.id ?? null}
           aheadCount={summary?.ahead ?? 0}
           onSelect={handleSelectCommit}

@@ -338,11 +338,11 @@ export default function CommitGraph({
           {/* 列表标题行 */}
           <div className="sticky top-0 z-10 flex border-b border-border bg-muted/80 backdrop-blur text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             <div style={{ width: svgW }} className="shrink-0" />
-            <div className="flex-1 flex items-center gap-2 px-2 py-1.5 min-w-0">
-              <span className="flex-1 min-w-0">提交说明</span>
-              <span className="shrink-0 w-[8rem]">作者</span>
-              <span className="shrink-0 w-[10rem]">日期</span>
-              <span className="shrink-0 w-[4.5rem]">版本</span>
+            <div className="flex-1 grid grid-cols-[1fr_6rem_7rem_4rem] md:grid-cols-[1fr_8rem_7rem_4rem] lg:grid-cols-[1fr_8rem_10rem_4.5rem] gap-2 px-2 py-1.5 min-w-0">
+              <span className="truncate min-w-0">提交说明</span>
+              <span className="truncate hidden sm:block">作者</span>
+              <span className="truncate hidden md:block">日期</span>
+              <span className="truncate hidden lg:block">版本</span>
             </div>
           </div>
 
@@ -502,85 +502,95 @@ export default function CommitGraph({
               </svg>
 
               {/* 右侧提交信息 */}
-              <div className="flex-1 px-2 min-w-0 flex items-center gap-1 text-xs leading-none">
-                {commit.refs.length > 0 && (
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {commit.refs.map((ref) => {
-                      const isAnnotatedTag = ref.kind === "annotated_tag";
-                      const isTag = ref.kind === "tag";
-                      const isHead = ref.kind === "head";
-                      return (
+              <div className="flex-1 px-2 min-w-0 grid grid-cols-[1fr_6rem_7rem_4rem] md:grid-cols-[1fr_8rem_7rem_4rem] lg:grid-cols-[1fr_8rem_10rem_4.5rem] gap-1 text-xs leading-none items-center">
+                {/* 第一列：refs + 提交说明 */}
+                <div className="flex items-center gap-1 min-w-0">
+                  {commit.refs.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap shrink-0">
+                      {commit.refs.map((ref) => {
+                        const isAnnotatedTag = ref.kind === "annotated_tag";
+                        const isTag = ref.kind === "tag";
+                        const isHead = ref.kind === "head";
+                        return (
+                          <div
+                            key={ref.name}
+                            className="inline-flex items-center gap-0.5 rounded-sm bg-card px-1 py-0.5 text-[10px] text-card-foreground font-mono leading-none shadow-sm border border-border"
+                            title={`${isHead ? "分支" : isAnnotatedTag ? "附注标签" : "标签"}: ${ref.name}`}
+                          >
+                            {/* 分支图标 */}
+                            {isHead && (
+                              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-orange-100 dark:bg-orange-200">
+                                <svg className="shrink-0 w-2.5 h-2.5 text-orange-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <line x1="6" y1="3" x2="6" y2="15" />
+                                  <circle cx="18" cy="6" r="3" />
+                                  <circle cx="6" cy="18" r="3" />
+                                  <path d="M18 9a9 9 0 0 1-9 9" />
+                                </svg>
+                              </span>
+                            )}
+                            {/* 轻量标签图标 */}
+                            {isTag && (
+                              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-blue-100 dark:bg-blue-200">
+                                <svg className="shrink-0 w-2.5 h-2.5 text-blue-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+                                  <path d="M7 7h.01" />
+                                </svg>
+                              </span>
+                            )}
+                            {/* 附注标签图标 */}
+                            {isAnnotatedTag && (
+                              <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-purple-100 dark:bg-purple-200">
+                                <svg className="shrink-0 w-2.5 h-2.5 text-purple-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
+                                  <path d="M12 9v4" />
+                                  <path d="M12 17h.01" />
+                                </svg>
+                              </span>
+                            )}
+                            <span className="max-w-[6rem] truncate">{ref.name}</span>
+                          </div>
+                        );
+                      })}
+                      {/* 未推送标识：前 aheadCount 个提交显示 */}
+                      {idx < aheadCount && (
                         <div
-                          key={ref.name}
-                          className="inline-flex items-center gap-0.5 rounded-sm bg-card px-1 py-0.5 text-[10px] text-card-foreground font-mono leading-none shadow-sm border border-border"
-                          title={`${isHead ? "分支" : isAnnotatedTag ? "附注标签" : "标签"}: ${ref.name}`}
+                          className="inline-flex items-center gap-0.5 rounded-sm bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-400 font-medium leading-none shadow-sm border border-green-300 dark:border-green-700"
+                          title="此提交尚未推送到远程"
                         >
-                          {/* 分支图标 */}
-                          {isHead && (
-                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-orange-100 dark:bg-orange-200">
-                              <svg className="shrink-0 w-2.5 h-2.5 text-orange-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="6" y1="3" x2="6" y2="15" />
-                                <circle cx="18" cy="6" r="3" />
-                                <circle cx="6" cy="18" r="3" />
-                                <path d="M18 9a9 9 0 0 1-9 9" />
-                              </svg>
-                            </span>
-                          )}
-                          {/* 轻量标签图标 */}
-                          {isTag && (
-                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-blue-100 dark:bg-blue-200">
-                              <svg className="shrink-0 w-2.5 h-2.5 text-blue-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
-                                <path d="M7 7h.01" />
-                              </svg>
-                            </span>
-                          )}
-                          {/* 附注标签图标 */}
-                          {isAnnotatedTag && (
-                            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-sm bg-purple-100 dark:bg-purple-200">
-                              <svg className="shrink-0 w-2.5 h-2.5 text-purple-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z" />
-                                <path d="M12 9v4" />
-                                <path d="M12 17h.01" />
-                              </svg>
-                            </span>
-                          )}
-                          <span className="max-w-[6rem] truncate">{ref.name}</span>
+                          ↑未推送
                         </div>
-                      );
-                    })}
-                    {/* 未推送标识：前 aheadCount 个提交显示 */}
-                    {idx < aheadCount && (
+                      )}
+                    </div>
+                  )}
+                  {/* 无 refs 但有未推送时也显示标识 */}
+                  {commit.refs.length === 0 && idx < aheadCount && (
+                    <div className="flex items-center gap-1 shrink-0">
                       <div
                         className="inline-flex items-center gap-0.5 rounded-sm bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-400 font-medium leading-none shadow-sm border border-green-300 dark:border-green-700"
                         title="此提交尚未推送到远程"
                       >
                         ↑未推送
                       </div>
-                    )}
-                  </div>
-                )}
-                {/* 无 refs 但有未推送时也显示标识 */}
-                {commit.refs.length === 0 && idx < aheadCount && (
-                  <div className="flex items-center gap-1">
-                    <div
-                      className="inline-flex items-center gap-0.5 rounded-sm bg-green-100 dark:bg-green-900/40 px-1 py-0.5 text-[10px] text-green-700 dark:text-green-400 font-medium leading-none shadow-sm border border-green-300 dark:border-green-700"
-                      title="此提交尚未推送到远程"
-                    >
-                      ↑未推送
                     </div>
-                  </div>
-                )}
-                <span className="truncate flex-1 min-w-0 cmt-text">
-                  {commit.message}
-                </span>
-                <span className="shrink-0 w-[8rem] truncate cmt-meta">
+                  )}
+                  {/* 提交说明 */}
+                  <span className="truncate flex-1 min-w-0 cmt-text">
+                    {commit.message}
+                  </span>
+                </div>
+                
+                {/* 第二列：作者 */}
+                <span className="truncate cmt-meta hidden sm:block">
                   {commit.author}
                 </span>
-                <span className="shrink-0 w-[10rem] cmt-meta">
+                
+                {/* 第三列：日期 */}
+                <span className="truncate cmt-meta hidden md:block">
                   {new Date(commit.time * 1000).toLocaleString()}
                 </span>
-                <span className="font-mono cmt-meta shrink-0 w-[4.5rem]">
+                
+                {/* 第四列：版本 */}
+                <span className="truncate font-mono cmt-meta hidden lg:block">
                   {commit.id.slice(0, 7)}
                 </span>
               </div>
