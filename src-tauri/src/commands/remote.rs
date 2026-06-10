@@ -37,7 +37,12 @@ pub fn fetch_remote(repo_path: String, remote: Option<String>) -> Result<String,
 
 /// Pull 拉取并合并
 #[tauri::command]
-pub fn pull_remote(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
+pub fn pull_remote(
+    repo_path: String,
+    remote: Option<String>,
+    branch: Option<String>,
+    credentials: Option<serde_json::Value>,
+) -> Result<String, String> {
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
     let branch_name = branch.unwrap_or_default();
 
@@ -47,16 +52,44 @@ pub fn pull_remote(repo_path: String, remote: Option<String>, branch: Option<Str
         vec!["pull", &remote_name, &branch_name]
     };
 
-    let child = create_git_command()
-        .args(&args)
+    let mut cmd = create_git_command();
+    cmd.args(&args)
         .current_dir(&repo_path)
-        .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // 如果提供了凭据，设置环境变量
+    if let Some(creds) = &credentials {
+        if let (Some(username), Some(password)) = (
+            creds.get("username").and_then(|v| v.as_str()),
+            creds.get("password").and_then(|v| v.as_str()),
+        ) {
+            cmd.env("GIT_USERNAME", username);
+            cmd.env("GIT_PASSWORD", password);
+            // 使用内联 credential helper
+            cmd.env(
+                "GIT_CONFIG_COUNT",
+                "1",
+            );
+            cmd.env(
+                "GIT_CONFIG_KEY_0",
+                "credential.helper",
+            );
+            cmd.env(
+                "GIT_CONFIG_VALUE_0",
+                "!f() { echo \"username=${GIT_USERNAME}\"; echo \"password=${GIT_PASSWORD}\"; }; f",
+            );
+        }
+    } else {
+        cmd.stdin(std::process::Stdio::inherit());
+    }
+
+    let child = cmd
         .spawn()
         .map_err(|e| format!("执行 git pull 失败: {}", e))?;
 
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .map_err(|e| format!("等待 git pull 完成失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -80,6 +113,7 @@ pub fn push_remote(
     remote: Option<String>,
     branch: Option<String>,
     set_upstream: bool,
+    credentials: Option<serde_json::Value>,
 ) -> Result<String, String> {
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
     let branch_name = branch.unwrap_or_default();
@@ -93,17 +127,44 @@ pub fn push_remote(
         args.push(&branch_name);
     }
 
-    // 使用 spawn + wait_with_output 以支持 git credential helper 弹窗认证
-    let child = create_git_command()
-        .args(&args)
+    let mut cmd = create_git_command();
+    cmd.args(&args)
         .current_dir(&repo_path)
-        .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // 如果提供了凭据，设置环境变量
+    if let Some(creds) = &credentials {
+        if let (Some(username), Some(password)) = (
+            creds.get("username").and_then(|v| v.as_str()),
+            creds.get("password").and_then(|v| v.as_str()),
+        ) {
+            cmd.env("GIT_USERNAME", username);
+            cmd.env("GIT_PASSWORD", password);
+            // 使用内联 credential helper
+            cmd.env(
+                "GIT_CONFIG_COUNT",
+                "1",
+            );
+            cmd.env(
+                "GIT_CONFIG_KEY_0",
+                "credential.helper",
+            );
+            cmd.env(
+                "GIT_CONFIG_VALUE_0",
+                "!f() { echo \"username=${GIT_USERNAME}\"; echo \"password=${GIT_PASSWORD}\"; }; f",
+            );
+        }
+    } else {
+        cmd.stdin(std::process::Stdio::inherit());
+    }
+
+    let child = cmd
         .spawn()
         .map_err(|e| format!("执行 git push 失败: {}", e))?;
 
-    let output = child.wait_with_output()
+    let output = child
+        .wait_with_output()
         .map_err(|e| format!("等待 git push 完成失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);

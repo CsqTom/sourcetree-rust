@@ -147,8 +147,8 @@ export function useFetchRemote(repoPath: string) {
 export function usePullRemote(repoPath: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ remote, branch }: { remote?: string; branch?: string }) =>
-      tauriCommands.pullRemote(repoPath, remote, branch),
+    mutationFn: ({ remote, branch, credentials }: { remote?: string; branch?: string; credentials?: { username: string; password: string } }) =>
+      tauriCommands.pullRemote(repoPath, remote, branch, credentials),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: repoKeys.detail(repoPath) })
     },
@@ -159,8 +159,8 @@ export function usePullRemote(repoPath: string) {
 export function usePushRemote(repoPath: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ remote, branch, setUpstream }: { remote?: string; branch?: string; setUpstream?: boolean }) =>
-      tauriCommands.pushRemote(repoPath, remote, branch, setUpstream),
+    mutationFn: ({ remote, branch, setUpstream, credentials }: { remote?: string; branch?: string; setUpstream?: boolean; credentials?: { username: string; password: string } }) =>
+      tauriCommands.pushRemote(repoPath, remote, branch, setUpstream, credentials),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: repoKeys.tracking(repoPath) })
       queryClient.invalidateQueries({ queryKey: repoKeys.summary(repoPath) })

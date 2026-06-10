@@ -121,12 +121,12 @@ export const tauriCommands = {
     invoke<string>('fetch_remote', { repoPath, remote }),
 
   /** Pull 拉取并合并 */
-  pullRemote: (repoPath: string, remote?: string, branch?: string) =>
-    invoke<string>('pull_remote', { repoPath, remote, branch }),
+  pullRemote: (repoPath: string, remote?: string, branch?: string, credentials?: { username: string; password: string }) =>
+    invoke<string>('pull_remote', { repoPath, remote, branch, credentials }),
 
   /** Push 推送到远程 */
-  pushRemote: (repoPath: string, remote?: string, branch?: string, setUpstream = false) =>
-    invoke<string>('push_remote', { repoPath, remote, branch, setUpstream }),
+  pushRemote: (repoPath: string, remote?: string, branch?: string, setUpstream = false, credentials?: { username: string; password: string }) =>
+    invoke<string>('push_remote', { repoPath, remote, branch, setUpstream, credentials }),
 
   /** 克隆仓库 */
   cloneRepo: (url: string, targetDir: string) =>

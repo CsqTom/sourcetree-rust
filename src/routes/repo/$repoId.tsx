@@ -62,6 +62,17 @@ function RepoLayout() {
   // 右键菜单状态
   const [branchContextMenu, setBranchContextMenu] = useState<{ x: number; y: number; branch: string; isRemote: boolean } | null>(null)
 
+  // 凭据对话框状态
+  const [credentialDialog, setCredentialDialog] = useState<{
+    type: 'pull' | 'push'
+    remote: string
+    branch: string
+    remoteUrl?: string
+  } | null>(null)
+  const [credentialUsername, setCredentialUsername] = useState('')
+  const [credentialPassword, setCredentialPassword] = useState('')
+  const [credentialSaving, setCredentialSaving] = useState(false)
+
   // 远程分支列表
   const [remoteBranches, setRemoteBranches] = useState<string[]>([])
 
@@ -145,7 +156,7 @@ function RepoLayout() {
   }
 
   /** Pull */
-  const handlePull = async () => {
+  const handlePull = async (credentials?: { username: string; password: string }) => {
     try {
       const tracking = branchTracking.find(t => t.isCurrent)
       let remote: string | undefined
@@ -156,15 +167,56 @@ function RepoLayout() {
         const remotes = await tauriCommands.listRemotes(repoPath)
         remote = remotes.length > 0 ? remotes[0].name : undefined
       }
-      const result = await mutations.pullRemote.mutateAsync({ remote, branch: currentBranch })
+      if (!remote) {
+        alert("拉取失败：当前仓库没有配置远程仓库。\n请先通过 git remote add 添加远程仓库。")
+        return
+      }
+      
+      const result = await mutations.pullRemote.mutateAsync({ 
+        remote, 
+        branch: currentBranch,
+        credentials
+      })
       alert("拉取成功\n" + result)
     } catch (e: any) {
-      alert("拉取失败: " + (e?.message || e))
+      const errorMsg = e?.message || e || ''
+      
+      // 检测认证失败
+      if (errorMsg.includes('could not read Username') || 
+          errorMsg.includes('Authentication failed') ||
+          errorMsg.includes('401') ||
+          errorMsg.includes('fatal: could not read')) {
+        
+        // 获取远程 URL
+        const tracking = branchTracking.find(t => t.isCurrent)
+        let remoteName = tracking?.upstream?.split("/")[0]
+        if (!remoteName) {
+          const remotes = await tauriCommands.listRemotes(repoPath)
+          remoteName = remotes.length > 0 ? remotes[0].name : undefined
+        }
+        
+        if (remoteName) {
+          const remotes = await tauriCommands.listRemotes(repoPath)
+          const remote = remotes.find(r => r.name === remoteName)
+          
+          setCredentialDialog({
+            type: 'pull',
+            remote: remoteName,
+            branch: currentBranch,
+            remoteUrl: remote?.fetch_url || remote?.push_url || undefined
+          })
+          setCredentialUsername('')
+          setCredentialPassword('')
+          return
+        }
+      }
+      
+      alert("拉取失败: " + errorMsg)
     }
   }
 
   /** Push */
-  const handlePush = async () => {
+  const handlePush = async (credentials?: { username: string; password: string }) => {
     try {
       const tracking = branchTracking.find(t => t.isCurrent)
       let remote: string | undefined
@@ -179,10 +231,48 @@ function RepoLayout() {
         }
         remote = remotes[0].name
       }
-      const result = await mutations.pushRemote.mutateAsync({ remote, branch: currentBranch, setUpstream: !tracking?.upstream })
+      
+      const result = await mutations.pushRemote.mutateAsync({ 
+        remote, 
+        branch: currentBranch, 
+        setUpstream: !tracking?.upstream,
+        credentials
+      })
       alert("推送成功\n" + result)
     } catch (e: any) {
-      alert("推送失败: " + (e?.message || e))
+      const errorMsg = e?.message || e || ''
+      
+      // 检测认证失败
+      if (errorMsg.includes('could not read Username') || 
+          errorMsg.includes('Authentication failed') ||
+          errorMsg.includes('401') ||
+          errorMsg.includes('fatal: could not read')) {
+        
+        // 获取远程 URL
+        const tracking = branchTracking.find(t => t.isCurrent)
+        let remoteName = tracking?.upstream?.split("/")[0]
+        if (!remoteName) {
+          const remotes = await tauriCommands.listRemotes(repoPath)
+          remoteName = remotes.length > 0 ? remotes[0].name : undefined
+        }
+        
+        if (remoteName) {
+          const remotes = await tauriCommands.listRemotes(repoPath)
+          const remote = remotes.find(r => r.name === remoteName)
+          
+          setCredentialDialog({
+            type: 'push',
+            remote: remoteName,
+            branch: currentBranch,
+            remoteUrl: remote?.fetch_url || remote?.push_url || undefined
+          })
+          setCredentialUsername('')
+          setCredentialPassword('')
+          return
+        }
+      }
+      
+      alert("推送失败: " + errorMsg)
     }
   }
 
@@ -211,7 +301,7 @@ function RepoLayout() {
           提交
         </button>
         <button
-          onClick={handlePull}
+          onClick={() => handlePull()}
           disabled={mutations.pullRemote.isPending}
           className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1 disabled:opacity-40"
         >
@@ -226,7 +316,7 @@ function RepoLayout() {
           )}
         </button>
         <button
-          onClick={handlePush}
+          onClick={() => handlePush()}
           disabled={mutations.pushRemote.isPending}
           className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent flex items-center gap-1 disabled:opacity-40"
         >
@@ -490,6 +580,88 @@ function RepoLayout() {
             <GitPullRequest className="w-3.5 h-3.5" />
             检出 {branchContextMenu.branch}
           </button>
+        </div>
+      )}
+
+      {/* 凭据输入对话框 */}
+      {credentialDialog && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" 
+          onClick={() => setCredentialDialog(null)}
+        >
+          <div 
+            className="bg-card border border-border rounded-lg shadow-xl p-4 w-[400px]" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-medium mb-3">
+              {credentialDialog.type === 'pull' ? '拉取需要认证' : '推送需要认证'}
+            </h3>
+            <div className="mb-3 text-[10px] text-muted-foreground space-y-1">
+              <div>远程仓库：{credentialDialog.remote}</div>
+              {credentialDialog.remoteUrl && (
+                <div className="truncate">URL：{credentialDialog.remoteUrl}</div>
+              )}
+              <div>分支：{credentialDialog.branch}</div>
+            </div>
+            <div className="mb-3">
+              <label className="text-[10px] text-muted-foreground block mb-1">用户名</label>
+              <input 
+                type="text" 
+                value={credentialUsername} 
+                onChange={(e) => setCredentialUsername(e.target.value)} 
+                placeholder="输入用户名" 
+                className="w-full px-2.5 py-1.5 text-xs rounded border border-input bg-background outline-none focus:border-primary" 
+                autoFocus 
+              />
+            </div>
+            <div className="mb-3">
+              <label className="text-[10px] text-muted-foreground block mb-1">密码 / Personal Access Token</label>
+              <input 
+                type="password" 
+                value={credentialPassword} 
+                onChange={(e) => setCredentialPassword(e.target.value)} 
+                placeholder="输入密码或 Personal Access Token" 
+                className="w-full px-2.5 py-1.5 text-xs rounded border border-input bg-background outline-none focus:border-primary" 
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button 
+                onClick={() => setCredentialDialog(null)} 
+                className="px-3 py-1.5 text-xs rounded border border-border hover:bg-accent"
+              >
+                取消
+              </button>
+              <button 
+                onClick={async () => {
+                  if (!credentialUsername.trim() || !credentialPassword.trim()) {
+                    alert('请输入用户名和密码')
+                    return
+                  }
+                  setCredentialSaving(true)
+                  try {
+                    const credentials = {
+                      username: credentialUsername.trim(),
+                      password: credentialPassword.trim()
+                    }
+                    if (credentialDialog.type === 'pull') {
+                      await handlePull(credentials)
+                    } else {
+                      await handlePush(credentials)
+                    }
+                    setCredentialDialog(null)
+                  } catch (e: any) {
+                    alert('认证失败: ' + (e?.message || e))
+                  } finally {
+                    setCredentialSaving(false)
+                  }
+                }} 
+                disabled={credentialSaving || !credentialUsername.trim() || !credentialPassword.trim()} 
+                className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              >
+                {credentialSaving ? '认证中...' : '确定'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
