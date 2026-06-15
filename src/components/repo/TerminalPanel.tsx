@@ -14,8 +14,10 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { spawn } from 'tauri-pty'
 import { Search, ChevronDown, ChevronUp, X, Trash2 } from 'lucide-react'
+import { tauriCommands } from '@/lib/tauri/commands'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -52,7 +54,8 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         const term = new Terminal({
           scrollback: 20000, // 2万行历史
           fontSize: 13,
-          fontFamily: 'JetBrains Mono, Consolas, "Courier New", monospace',
+          // 使用 Nerd Font 字体支持特殊图标（oh-my-posh/starship 等终端美化工具）
+          fontFamily: '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono", "Cascadia Code PL", "JetBrains Mono", Consolas, "Courier New", monospace',
           cursorBlink: true,
           cursorStyle: 'block',
           theme: {
@@ -87,10 +90,15 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         const fitAddon = new FitAddon()
         const searchAddon = new SearchAddon()
         const webLinksAddon = new WebLinksAddon()
+        const unicode11Addon = new Unicode11Addon()
 
         term.loadAddon(fitAddon)
         term.loadAddon(searchAddon)
         term.loadAddon(webLinksAddon)
+        term.loadAddon(unicode11Addon)
+
+        // 启用 Unicode 11 宽度计算（支持 CJK 宽字符和特殊表情）
+        term.unicode.activeVersion = '11'
 
         // 打开终端
         term.open(terminalRef.current)
@@ -108,9 +116,11 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
           try {
             console.log('[Terminal] 启动 PTY...')
 
-            // Windows 使用 PowerShell
-            const shell = 'powershell.exe'
+            // 从后端获取系统默认 shell
+            const shell = await tauriCommands.getDefaultShell()
             const args: string[] = []
+
+            console.log('[Terminal] 使用 shell:', shell)
 
             const pty = await spawn(shell, args, {
               cols: term.cols,

@@ -50,6 +50,7 @@ pub fn run() {
             commands::status::resolve_conflict_with_strategy,
             commands::status::merge_branch,
             commands::status::delete_working_file,
+            commands::status::get_default_shell,
             // 分支管理
             commands::branch::get_branch_tracking,
             commands::branch::create_branch,

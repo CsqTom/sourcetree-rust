@@ -369,3 +369,36 @@ pub fn delete_working_file(repo_path: String, file_path: String) -> Result<Strin
 
     Ok(format!("已删除: {}", file_path))
 }
+
+/// 获取系统默认 shell
+#[tauri::command]
+pub fn get_default_shell() -> String {
+    // Windows: 使用 PowerShell
+    if cfg!(windows) {
+        return "powershell.exe".to_string();
+    }
+
+    // Linux/macOS: 优先使用 $SHELL 环境变量，否则尝试常见 shell
+    if let Ok(shell) = std::env::var("SHELL") {
+        return shell;
+    }
+
+    // 尝试常见 shell 路径
+    let common_shells = [
+        "/bin/bash",
+        "/usr/bin/bash",
+        "/bin/zsh",
+        "/usr/bin/zsh",
+        "/bin/sh",
+        "/usr/bin/sh",
+    ];
+
+    for shell_path in common_shells {
+        if std::path::Path::new(shell_path).exists() {
+            return shell_path.to_string();
+        }
+    }
+
+    // 默认返回 /bin/sh
+    "/bin/sh".to_string()
+}

@@ -252,4 +252,8 @@ export const tauriCommands = {
   /** 删除工作区文件 */
   deleteWorkingFile: (repoPath: string, filePath: string) =>
     invoke<string>('delete_working_file', { repoPath, filePath }),
+
+  /** 获取系统默认 shell */
+  getDefaultShell: () =>
+    invoke<string>('get_default_shell'),
 } as const
