@@ -54,8 +54,10 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         const term = new Terminal({
           scrollback: 20000, // 2万行历史
           fontSize: 13,
+          lineHeight: 1.2, // 行高，与 fanbox 保持一致
           // 使用 Nerd Font 字体支持特殊图标（oh-my-posh/starship 等终端美化工具）
-          fontFamily: '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono", "Cascadia Code PL", "JetBrains Mono", Consolas, "Courier New", monospace',
+          // Linux fallback: DejaVu Sans Mono, Ubuntu Mono, Liberation Mono
+          fontFamily: '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono", "Cascadia Code PL", "JetBrains Mono", "DejaVu Sans Mono", "Ubuntu Mono", "Liberation Mono", Consolas, "Courier New", monospace',
           cursorBlink: true,
           cursorStyle: 'block',
           theme: {
@@ -383,7 +385,7 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
       )}
 
       {/* 终端容器 */}
-      <div ref={terminalRef} className="flex-1 min-h-0" />
+      <div ref={terminalRef} className="flex-1 min-h-0" style={{ letterSpacing: 0 }} />
     </div>
   )
 }
