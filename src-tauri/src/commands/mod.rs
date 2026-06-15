@@ -8,3 +8,4 @@ pub mod branch;
 pub mod remote;
 pub mod discard;
 pub mod tag;
+pub mod font;

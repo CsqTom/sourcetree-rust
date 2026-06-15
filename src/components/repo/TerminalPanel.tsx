@@ -18,6 +18,7 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { spawn } from 'tauri-pty'
 import { Search, ChevronDown, ChevronUp, X, Trash2 } from 'lucide-react'
 import { tauriCommands } from '@/lib/tauri/commands'
+import { useFontStore } from '@/stores'
 import '@xterm/xterm/css/xterm.css'
 
 interface TerminalPanelProps {
@@ -31,6 +32,7 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const ptyRef = useRef<any>(null)
   
+  const { terminalFont } = useFontStore()
   const [showSearch, setShowSearch] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [searchResults, setSearchResults] = useState({ current: 0, total: 0 })
@@ -54,8 +56,7 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         const term = new Terminal({
           scrollback: 20000, // 2万行历史
           fontSize: 13,
-          // 不设置 fontFamily，使用系统默认 monospace 字体
-          // 如果用户安装了 Nerd Font，系统会自动使用它
+          fontFamily: terminalFont || undefined,  // 使用用户设置的字体，否则系统默认等宽字体
           cursorBlink: true,
           cursorStyle: 'block',
           theme: {
@@ -222,7 +223,14 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
       searchAddonRef.current = null
       ptyRef.current = null
     }
-  }, [workspacePath])
+  }, [workspacePath])  // 只依赖 workspacePath，字体变化不重建终端
+
+  // 动态更新终端字体（终端已创建时）
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.fontFamily = terminalFont || undefined
+    }
+  }, [terminalFont])
 
   // 搜索功能
   const handleSearch = useCallback((direction: 'next' | 'prev') => {

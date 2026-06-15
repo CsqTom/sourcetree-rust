@@ -85,6 +85,8 @@ pub fn run() {
             commands::tag::push_tag,
             commands::tag::delete_remote_tag,
             commands::tag::list_tags,
+            // 系统字体
+            commands::font::get_monospace_fonts,
         ])
         .run(tauri::generate_context!())
         .expect("启动应用失败");

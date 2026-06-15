@@ -256,4 +256,10 @@ export const tauriCommands = {
   /** 获取系统默认 shell */
   getDefaultShell: () =>
     invoke<string>('get_default_shell'),
+
+  // ===== 系统字体命令 =====
+
+  /** 获取系统已安装的等宽字体列表 */
+  getMonospaceFonts: () =>
+    invoke<string[]>('get_monospace_fonts'),
 } as const

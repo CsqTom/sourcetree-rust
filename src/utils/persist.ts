@@ -13,6 +13,8 @@ const KEYS = {
   TABS: "sourcetree_tabs",
   ACTIVE_TAB: "sourcetree_active_tab",
   THEME: "sourcetree_theme",
+  UI_FONT: "sourcetree_ui_font",
+  TERMINAL_FONT: "sourcetree_terminal_font",
 } as const;
 
 // ===== 书签持久化 =====
@@ -93,6 +95,46 @@ export function saveTheme(theme: string): void {
 export function loadTheme(): string | null {
   try {
     return localStorage.getItem(KEYS.THEME);
+  } catch {
+    return null;
+  }
+}
+
+// ===== 字体持久化 =====
+
+/** 保存界面字体 */
+export function saveUiFont(font: string): void {
+  try {
+    localStorage.setItem(KEYS.UI_FONT, font);
+  } catch (e) {
+    console.warn("保存界面字体失败:", e);
+  }
+}
+
+/** 加载界面字体 */
+export function loadUiFont(): string | null {
+  try {
+    return localStorage.getItem(KEYS.UI_FONT);
+  } catch {
+    return null;
+  }
+}
+
+// ===== 终端字体持久化 =====
+
+/** 保存终端字体 */
+export function saveTerminalFont(font: string): void {
+  try {
+    localStorage.setItem(KEYS.TERMINAL_FONT, font);
+  } catch (e) {
+    console.warn("保存终端字体失败:", e);
+  }
+}
+
+/** 加载终端字体 */
+export function loadTerminalFont(): string | null {
+  try {
+    return localStorage.getItem(KEYS.TERMINAL_FONT);
   } catch {
     return null;
   }

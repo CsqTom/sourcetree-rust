@@ -18,6 +18,10 @@ import {
   saveTabs,
   loadTheme,
   saveTheme,
+  loadUiFont,
+  saveUiFont,
+  loadTerminalFont,
+  saveTerminalFont,
 } from "@/utils/persist";
 
 // ===== 主题状态 =====
@@ -43,6 +47,34 @@ export const useThemeStore = create<ThemeState>((set) => ({
     document.documentElement.classList.toggle("dark", theme === "dark");
     saveTheme(theme);
     set({ theme });
+  },
+}));
+
+// ===== 字体状态 =====
+
+interface FontState {
+  uiFont: string;
+  terminalFont: string;  // 终端字体
+  fontOptions: string[];  // 系统字体列表
+  setUiFont: (font: string) => void;
+  setTerminalFont: (font: string) => void;
+  setFontOptions: (fonts: string[]) => void;
+}
+
+export const useFontStore = create<FontState>((set) => ({
+  uiFont: loadUiFont() || "",
+  terminalFont: loadTerminalFont() || "",
+  fontOptions: [],
+  setUiFont: (font: string) => {
+    saveUiFont(font);
+    set({ uiFont: font });
+  },
+  setTerminalFont: (font: string) => {
+    saveTerminalFont(font);
+    set({ terminalFont: font });
+  },
+  setFontOptions: (fonts: string[]) => {
+    set({ fontOptions: fonts });
   },
 }));
 

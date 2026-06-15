@@ -8,7 +8,7 @@ import { createRootRouteWithContext, Outlet, useNavigate } from '@tanstack/react
 import { QueryClient } from '@tanstack/react-query'
 import { open } from '@tauri-apps/plugin-dialog'
 import { tauriCommands } from '@/lib/tauri/commands'
-import { useThemeStore, useTabStore, useBookmarkStore } from '@/stores'
+import { useThemeStore, useTabStore, useBookmarkStore, useFontStore } from '@/stores'
 import { loadTabs } from '@/utils/persist'
 import { useEffect, useState, useRef } from 'react'
 
@@ -94,25 +94,17 @@ function RootComponent() {
   const { theme, toggleTheme } = useThemeStore()
   const { tabs, openTab, setActiveTab } = useTabStore()
   const { addBookmark, bookmarks } = useBookmarkStore()
-  const [backendMsg, setBackendMsg] = useState("正在连接后端…")
-  const [backendInfo, setBackendInfo] = useState<string | null>(null)
+  const { uiFont, setUiFont, terminalFont, setTerminalFont, fontOptions, setFontOptions } = useFontStore()
   const [isRestoring, setIsRestoring] = useState(true)
   const [restoreErrors, setRestoreErrors] = useState<string[]>([])
+  const [showSettings, setShowSettings] = useState(false)
   const restoringRef = useRef(false)
   const navigate = useNavigate()
 
-  // 初始化：测试 IPC 通信 + 自动恢复所有仓库
+  // 初始化：自动恢复所有仓库
   useEffect(() => {
     if (restoringRef.current) return
     restoringRef.current = true
-
-    tauriCommands.greet("SourceTree")
-      .then((msg) => setBackendMsg(msg))
-      .catch(() => setBackendMsg("后端未连接（开发前端时正常）"))
-
-    tauriCommands.getBackendInfo()
-      .then((info) => setBackendInfo(info.status))
-      .catch(() => {})
 
     // 批量恢复所有上次打开的仓库
     ;(async () => {
@@ -230,6 +222,26 @@ function RootComponent() {
     document.documentElement.classList.toggle("dark", theme === "dark")
   }, [theme])
 
+  // 应用界面字体
+  useEffect(() => {
+    if (uiFont) {
+      document.documentElement.style.setProperty('--font-ui', uiFont)
+    } else {
+      document.documentElement.style.removeProperty('--font-ui')
+    }
+  }, [uiFont])
+
+  // 获取系统字体列表
+  useEffect(() => {
+    tauriCommands.getMonospaceFonts()
+      .then((fonts) => {
+        setFontOptions(fonts)
+      })
+      .catch((e) => {
+        console.warn("获取系统字体失败:", e)
+      })
+  }, [setFontOptions])
+
   // 恢复中：显示加载状态
   if (isRestoring) {
     return (
@@ -268,12 +280,17 @@ function RootComponent() {
             </svg>
             <span className="hidden sm:inline">新增</span>
           </button>
-          <span className="text-sm text-muted-foreground">{backendMsg}</span>
-          {backendInfo && (
-            <span className="text-[10px] text-muted-foreground/60">
-              {backendInfo}
-            </span>
-          )}
+          {/* 设置按钮 */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="px-2 py-1 text-sm rounded border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
+            title="设置"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
           <button
             onClick={toggleTheme}
             className="px-2 py-1 text-sm rounded border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors"
@@ -282,6 +299,66 @@ function RootComponent() {
           </button>
         </div>
       </header>
+
+      {/* ===== 设置弹窗 ===== */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-card border border-border rounded-lg shadow-2xl w-[400px]">
+            {/* 弹窗标题 */}
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="text-sm font-medium">设置</h3>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="p-1 rounded hover:bg-accent"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {/* 设置内容 */}
+            <div className="px-4 py-3 space-y-4">
+              {/* 界面字体 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">界面字体</label>
+                <select
+                  value={uiFont}
+                  onChange={(e) => setUiFont(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm rounded border border-input bg-background"
+                >
+                  <option value="">系统默认</option>
+                  {fontOptions.map((font) => (
+                    <option key={font} value={font}>{font}</option>
+                  ))}
+                </select>
+              </div>
+              {/* 终端字体 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">终端字体</label>
+                <select
+                  value={terminalFont}
+                  onChange={(e) => setTerminalFont(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm rounded border border-input bg-background"
+                >
+                  <option value="">系统默认等宽字体</option>
+                  {fontOptions.map((font) => (
+                    <option key={font} value={font}>{font}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {/* 弹窗底部 */}
+            <div className="px-4 py-3 border-t border-border flex justify-end">
+              <button
+                onClick={() => setShowSettings(false)}
+                className="px-3 py-1.5 text-sm rounded bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== Tab 栏 ===== */}
       <TabBar />
