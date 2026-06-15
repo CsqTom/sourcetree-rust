@@ -54,10 +54,8 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         const term = new Terminal({
           scrollback: 20000, // 2万行历史
           fontSize: 13,
-          lineHeight: 1.2, // 行高，与 fanbox 保持一致
-          // 使用 Nerd Font 字体支持特殊图标（oh-my-posh/starship 等终端美化工具）
-          // Linux fallback: DejaVu Sans Mono, Ubuntu Mono, Liberation Mono
-          fontFamily: '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", "Hack Nerd Font", "Symbols Nerd Font Mono", "Cascadia Code PL", "JetBrains Mono", "DejaVu Sans Mono", "Ubuntu Mono", "Liberation Mono", Consolas, "Courier New", monospace',
+          // 不设置 fontFamily，使用系统默认 monospace 字体
+          // 如果用户安装了 Nerd Font，系统会自动使用它
           cursorBlink: true,
           cursorStyle: 'block',
           theme: {
@@ -238,9 +236,9 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         wholeWord: false,
         caseSensitive: false,
         decorations: {
-          matchBackground: '#FFD700',
+          matchBackground: '#565B64',
           activeMatchBackground: '#FF6B6B',
-          matchOverviewRuler: '#FFD700',
+          matchOverviewRuler: '#565B64',
           activeMatchColorOverviewRuler: '#FF6B6B',
         },
       })
@@ -250,9 +248,9 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
         wholeWord: false,
         caseSensitive: false,
         decorations: {
-          matchBackground: '#FFD700',
+          matchBackground: '#565B64',
           activeMatchBackground: '#FF6B6B',
-          matchOverviewRuler: '#FFD700',
+          matchOverviewRuler: '#565B64',
           activeMatchColorOverviewRuler: '#FF6B6B',
         },
       })
@@ -269,9 +267,9 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
       wholeWord: false,
       caseSensitive: false,
       decorations: {
-        matchBackground: '#FFD700',
+        matchBackground: '#565B64',
         activeMatchBackground: '#FF6B6B',
-        matchOverviewRuler: '#FFD700',
+        matchOverviewRuler: '#565B64',
         activeMatchColorOverviewRuler: '#FF6B6B',
       },
     })
@@ -385,7 +383,7 @@ export function TerminalPanel({ workspacePath }: TerminalPanelProps) {
       )}
 
       {/* 终端容器 */}
-      <div ref={terminalRef} className="flex-1 min-h-0" style={{ letterSpacing: 0 }} />
+      <div ref={terminalRef} className="flex-1 min-h-0" />
     </div>
   )
 }

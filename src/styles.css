@@ -83,11 +83,3 @@
       Ubuntu, Cantarell, sans-serif;
   }
 }
-
-/* xterm 终端样式：确保字符间距一致 */
-.xterm {
-  letter-spacing: 0;
-}
-.xterm-helpers {
-  font-family: inherit !important;
-}
