@@ -45,6 +45,12 @@ function RepoLayout() {
   const { selectedFile, selectedDiff, showDiff, refreshDiff, clearSelection } = useFileDiff(repoPath)
   useAutoFetch(repoPath)
 
+  // 刷新仓库状态（用于冲突解决后更新文件列表）
+  const refreshStatus = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['repo', repoPath, 'status'] })
+    queryClient.invalidateQueries({ queryKey: ['repo', repoPath, 'summary'] })
+  }, [queryClient, repoPath])
+
   // 从 branchTracking 获取当前分支
   const currentBranch = branchTracking.find(t => t.isCurrent)?.branch || ''
 
@@ -109,6 +115,22 @@ function RepoLayout() {
     } catch (e: any) {
       const errorMsg = e?.message || e || '未知错误'
       alert(`切换分支失败: ${errorMsg}\n可能存在未提交的更改或冲突，请先处理后再试。`)
+    }
+  }
+
+  /** 合并分支到当前分支 */
+  const handleMergeBranch = async (branch: string) => {
+    if (branch === currentBranch) return
+    try {
+      const result = await mutations.mergeBranch.mutateAsync(branch)
+      if (result.hasConflicts) {
+        alert(result.message)
+      } else {
+        // 成功合并，刷新数据
+      }
+    } catch (e: any) {
+      const errorMsg = e?.message || e || '未知错误'
+      alert(`合并分支失败: ${errorMsg}`)
     }
   }
 
@@ -407,13 +429,13 @@ function RepoLayout() {
             </button>
           </div>
 
-          {/* BRANCHES */}
+          {/* 分支 */}
           <div className="border-b border-border">
             <button
               onClick={() => setShowBranches(!showBranches)}
               className="w-full px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between hover:bg-accent/30"
             >
-              BRANCHES
+              分支
               <ChevronRight className={`w-3 h-3 transition-transform ${showBranches ? 'rotate-90' : ''}`} />
             </button>
             {showBranches && (
@@ -446,18 +468,18 @@ function RepoLayout() {
             )}
           </div>
 
-          {/* TAGS */}
+          {/* 标签 */}
           <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider border-b border-border">
-            TAGS
+            标签
           </div>
 
-          {/* REMOTES */}
+          {/* 远程 */}
           <div className="border-b border-border">
             <button
               onClick={() => setShowRemotes(!showRemotes)}
               className="w-full px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between hover:bg-accent/30"
             >
-              REMOTES
+              远程
               <ChevronRight className={`w-3 h-3 transition-transform ${showRemotes ? 'rotate-90' : ''}`} />
             </button>
             {showRemotes && (
@@ -520,6 +542,7 @@ function RepoLayout() {
               onDiscardLines={(path, selections) => mutations.discardLines.mutate({ filePath: path, selections })}
               onUnstageLines={(path, selections) => mutations.unstageLines.mutate({ filePath: path, selections })}
               onRefreshDiff={refreshDiff}
+              onRefreshStatus={refreshStatus}
             />
           </div>
           
@@ -582,6 +605,19 @@ function RepoLayout() {
             <GitPullRequest className="w-3.5 h-3.5" />
             检出 {branchContextMenu.branch}
           </button>
+          {/* 合并分支选项 - 只对本地非当前分支显示 */}
+          {!branchContextMenu.isRemote && branchContextMenu.branch !== currentBranch && (
+            <button
+              onClick={() => {
+                handleMergeBranch(branchContextMenu.branch)
+                setBranchContextMenu(null)
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-accent"
+            >
+              <GitMerge className="w-3.5 h-3.5" />
+              合并 {branchContextMenu.branch} 至当前分支
+            </button>
+          )}
         </div>
       )}
 

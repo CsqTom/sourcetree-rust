@@ -12,7 +12,7 @@ import {
   useStageFiles, useUnstageFiles, useCommitChanges,
   useDiscardFile, useDiscardHunk, useStageHunk,
   useStageLines, useDiscardLines, useUnstageLines,
-  useCheckoutBranch, useFetchRemote, usePullRemote, usePushRemote,
+  useCheckoutBranch, useMergeBranch, useFetchRemote, usePullRemote, usePushRemote,
 } from '@/lib/queries'
 import type { FileStatus } from '@/lib/tauri/types'
 
@@ -56,6 +56,7 @@ export function useRepoMutations(repoPath: string) {
     discardLines: useDiscardLines(repoPath),
     unstageLines: useUnstageLines(repoPath),
     checkoutBranch: useCheckoutBranch(repoPath),
+    mergeBranch: useMergeBranch(repoPath),
     fetchRemote: useFetchRemote(repoPath),
     pullRemote: usePullRemote(repoPath),
     pushRemote: usePushRemote(repoPath),

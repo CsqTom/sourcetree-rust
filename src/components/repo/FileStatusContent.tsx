@@ -54,6 +54,7 @@ export interface FileStatusContentProps {
   onDiscardLines: (path: string, selections: { hunkIndex: number; lineIndices: number[] }[]) => void
   onUnstageLines: (path: string, selections: { hunkIndex: number; lineIndices: number[] }[]) => void
   onRefreshDiff?: () => void
+  onRefreshStatus?: () => void
 }
 
 // ===== 冲突块解析 =====
@@ -288,19 +289,40 @@ function ConflictResolveDialog({
     const loadContent = async () => {
       try {
         setLoading(true)
-        // 读取工作区文件内容（包含冲突标记 <<<<<<< HEAD / ======= / >>>>>>> ）
+        // 读取工作区文件内容（可能包含冲突标记）
         const workingContent = await tauriCommands.readWorkingFile(repoPath, filePath)
         const parsed = parseConflictBlocks(workingContent)
-        setBlocks(parsed)
 
-        // 初始合并结果
-        const initialResult = mergeBlocksToResult(parsed)
-        setMergedResult(initialResult)
+        // 检查是否有真正的冲突标记
+        // 如果解析结果只有一个块且没有 ours/theirs 内容，说明工作区文件没有冲突标记
+        // 这种情况发生在 theirs 删除文件时（UD 状态），Git 保留 ours 的完整内容
+        const hasConflictMarkers = parsed.some(b => b.ours || b.theirs)
 
-        // 聚焦第一个未解决冲突
-        const firstUnresolved = parsed.find(b => b.resolved === 'unresolved')
-        if (firstUnresolved) {
-          setActiveConflictIndex(firstUnresolved.index)
+        if (!hasConflictMarkers) {
+          // 无冲突标记：使用 getConflictContent 获取 ours/theirs 版本
+          const content = await tauriCommands.getConflictContent(repoPath, filePath)
+          // 创建一个冲突块：ours = 当前版本，theirs = 传入版本（可能为空）
+          const specialBlock: ConflictBlock = {
+            index: 0,
+            before: '',
+            ours: content.ours || workingContent, // ours 版本
+            theirs: content.theirs || '', // theirs 版本（删除时为空）
+            base: content.base || '',
+            resolved: 'unresolved',
+            resolvedContent: '',
+          }
+          setBlocks([specialBlock])
+          setMergedResult(content.ours || workingContent)
+        } else {
+          // 有冲突标记：正常解析
+          setBlocks(parsed)
+          const initialResult = mergeBlocksToResult(parsed)
+          setMergedResult(initialResult)
+          // 聚焦第一个未解决冲突
+          const firstUnresolved = parsed.find(b => b.resolved === 'unresolved')
+          if (firstUnresolved) {
+            setActiveConflictIndex(firstUnresolved.index)
+          }
         }
       } catch (e: any) {
         setError('加载冲突内容失败: ' + (e?.message || e))
@@ -744,7 +766,7 @@ export function FileStatusContent({
   onShowDiff, onStage, onStageAll, onUnstage, onUnstageAll,
   onCommit, onDiscardFile, onDiscardHunk, onStageHunk,
   onStageLines, onDiscardLines, onUnstageLines,
-  onRefreshDiff,
+  onRefreshDiff, onRefreshStatus,
 }: FileStatusContentProps) {
   const [diffMode, setDiffMode] = useState<"read" | "edit">("edit")
   const [lastClickFromStaged, setLastClickFromStaged] = useState(false)
@@ -759,12 +781,39 @@ export function FileStatusContent({
   // 冲突解决弹窗状态
   const [conflictDialogFile, setConflictDialogFile] = useState<string | null>(null)
 
+  // 文件右键菜单状态
+  const [fileContextMenu, setFileContextMenu] = useState<{ x: number; y: number; path: string; type: 'staged' | 'unstaged' | 'untracked' } | null>(null)
+
   const handleShowDiff = useCallback((path: string, fromStaged?: boolean) => {
     setLastClickFromStaged(!!fromStaged)
     onShowDiff(path, fromStaged)
   }, [onShowDiff])
 
   const isStagedFile = lastClickFromStaged
+
+  // 复制绝对路径
+  const handleCopyAbsolutePath = useCallback((filePath: string) => {
+    const absolutePath = `${repoPath}/${filePath}`.replace(/\\/g, '/')
+    navigator.clipboard.writeText(absolutePath).then(() => {
+      // 可选：显示提示
+    }).catch(() => {
+      alert('复制失败')
+    })
+    setFileContextMenu(null)
+  }, [repoPath])
+
+  // 删除文件（仅未暂存文件）
+  const handleDeleteFile = useCallback(async (filePath: string) => {
+    if (!confirm(`确定要删除文件 "${filePath}" 吗？此操作不可撤销。`)) return
+    try {
+      await tauriCommands.deleteWorkingFile(repoPath, filePath)
+      if (onRefreshStatus) onRefreshStatus()
+      if (onRefreshDiff) onRefreshDiff()
+    } catch (e: any) {
+      alert('删除文件失败: ' + (e?.message || e))
+    }
+    setFileContextMenu(null)
+  }, [repoPath, onRefreshStatus, onRefreshDiff])
 
   // 窗口获焦时自动刷新差异
   useEffect(() => {
@@ -774,6 +823,15 @@ export function FileStatusContent({
     window.addEventListener("focus", handleFocus)
     return () => window.removeEventListener("focus", handleFocus)
   }, [selectedFile, onRefreshDiff])
+
+  // 点击空白处关闭右键菜单
+  useEffect(() => {
+    const handleClickOutside = () => setFileContextMenu(null)
+    if (fileContextMenu) {
+      window.addEventListener('click', handleClickOutside)
+      return () => window.removeEventListener('click', handleClickOutside)
+    }
+  }, [fileContextMenu])
 
   // 垂直拖动（左右分隔条）
   const handleVerticalDragStart = (e: React.MouseEvent) => {
@@ -846,7 +904,8 @@ export function FileStatusContent({
   // 冲突解决完成后的回调
   const handleConflictResolved = useCallback(() => {
     if (onRefreshDiff) onRefreshDiff()
-  }, [onRefreshDiff])
+    if (onRefreshStatus) onRefreshStatus()
+  }, [onRefreshDiff, onRefreshStatus])
 
   return (
     <div className="flex-1 flex min-h-0 overflow-hidden" ref={containerRef}>
@@ -911,6 +970,10 @@ export function FileStatusContent({
                   key={f.path}
                   className={`group flex items-center px-3 py-1 text-xs cursor-pointer transition-colors ${selectedFile === f.path && isStagedFile ? "bg-primary/15 text-foreground font-medium" : "hover:bg-accent/50"}`}
                   onClick={() => handleShowDiff(f.path, true)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setFileContextMenu({ x: e.clientX, y: e.clientY, path: f.path, type: 'staged' })
+                  }}
                 >
                   <span className="w-4 text-green-600 shrink-0 flex items-center justify-center">
                     <StatusIcon status={f.stage_status || ""} />
@@ -950,6 +1013,10 @@ export function FileStatusContent({
                   key={f.path}
                   className={`group flex items-center px-3 py-1 text-xs cursor-pointer transition-colors ${selectedFile === f.path && !isStagedFile ? "bg-primary/15 text-foreground font-medium" : "hover:bg-accent/50"}`}
                   onClick={() => handleShowDiff(f.path, false)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setFileContextMenu({ x: e.clientX, y: e.clientY, path: f.path, type: f.is_untracked ? 'untracked' : 'unstaged' })
+                  }}
                 >
                   <span className={`w-4 shrink-0 flex items-center justify-center ${f.is_untracked ? "text-purple-600" : "text-orange-600"}`}>
                     <StatusIcon status={f.is_untracked ? "?" : (f.worktree_status || "")} />
@@ -1082,6 +1149,33 @@ export function FileStatusContent({
           onClose={() => setConflictDialogFile(null)}
           onResolved={handleConflictResolved}
         />
+      )}
+
+      {/* 文件右键菜单 */}
+      {fileContextMenu && (
+        <div
+          className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[120px]"
+          style={{ left: fileContextMenu.x, top: fileContextMenu.y }}
+          onClick={() => setFileContextMenu(null)}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent flex items-center gap-2"
+            onClick={() => handleCopyAbsolutePath(fileContextMenu.path)}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+            复制绝对路径
+          </button>
+          {fileContextMenu.type !== 'staged' && (
+            <button
+              className="w-full px-3 py-1.5 text-xs text-left hover:bg-accent text-red-600 flex items-center gap-2"
+              onClick={() => handleDeleteFile(fileContextMenu.path)}
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6H21" /><path d="M8 6V4H16V6" /><path d="M10 11V16" /><path d="M14 11V16" /><path d="M19 6L18 20C18 20.5304 17.7893 21.0391 17.4142 21.4142C17.0391 21.7893 16.5304 22 16 22H8C7.46957 22 6.96086 21.7893 6.58579 21.4142C6.21071 21.0391 6 20.5304 6 20L5 6" /></svg>
+              删除文件
+            </button>
+          )}
+        </div>
       )}
     </div>
   )

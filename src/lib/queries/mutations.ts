@@ -131,6 +131,20 @@ export function useCheckoutBranch(repoPath: string) {
   })
 }
 
+/** 合并分支到当前分支 */
+export function useMergeBranch(repoPath: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (branchName: string) => tauriCommands.mergeBranch(repoPath, branchName),
+    onSuccess: () => {
+      // 合并后刷新状态、提交历史、摘要
+      queryClient.invalidateQueries({ queryKey: repoKeys.status(repoPath) })
+      queryClient.invalidateQueries({ queryKey: repoKeys.commits(repoPath) })
+      queryClient.invalidateQueries({ queryKey: repoKeys.summary(repoPath) })
+    },
+  })
+}
+
 /** Fetch 远程 */
 export function useFetchRemote(repoPath: string) {
   const queryClient = useQueryClient()

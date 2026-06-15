@@ -262,9 +262,8 @@ pub fn resolve_conflict(repo_path: String, file_path: String, content: String) -
     Ok(format!("冲突已解决: {}", file_path))
 }
 
-/// 使用指定版本解决冲突
-///
-/// strategy: "ours" | "theirs"
+/// 使用指定策略解决冲突（ours/theirs）
+/// 当 theirs/ours 删除文件时，对应 stage 不存在，需要特殊处理
 #[tauri::command]
 pub fn resolve_conflict_with_strategy(
     repo_path: String,
@@ -284,15 +283,26 @@ pub fn resolve_conflict_with_strategy(
         .output()
         .map_err(|e| format!("获取 {} 版本失败: {}", strategy, e))?;
 
+    let full_path = std::path::Path::new(&repo_path).join(&file_path);
+
+    // 检查是否因为该版本删除了文件而失败
     if !show_output.status.success() {
         let stderr = String::from_utf8_lossy(&show_output.stderr);
-        return Err(format!("获取 {} 版本内容失败: {}", strategy, stderr));
+        // 如果 stderr 包含 "not at stage"，说明该版本删除了文件
+        if stderr.contains("not at stage") {
+            // theirs/ours 删除了文件，需要删除工作区文件
+            if full_path.exists() {
+                std::fs::remove_file(&full_path)
+                    .map_err(|e| format!("删除文件失败: {}", e))?;
+            }
+        } else {
+            return Err(format!("获取 {} 版本内容失败: {}", strategy, stderr));
+        }
+    } else {
+        // 该版本存在，写入工作区
+        std::fs::write(&full_path, &show_output.stdout)
+            .map_err(|e| format!("写入文件失败: {}", e))?;
     }
-
-    // 写入工作区
-    let full_path = std::path::Path::new(&repo_path).join(&file_path);
-    std::fs::write(&full_path, &show_output.stdout)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
 
     // 标记为已解决
     let add_output = create_git_command()
@@ -307,4 +317,55 @@ pub fn resolve_conflict_with_strategy(
     }
 
     Ok(format!("使用 {} 版本解决冲突: {}", strategy, file_path))
+}
+
+/// 合并指定分支到当前分支
+/// 执行 git merge <branch>，返回合并结果
+#[tauri::command]
+pub fn merge_branch(repo_path: String, branch: String) -> Result<serde_json::Value, String> {
+    // 执行 git merge
+    let output = create_git_command()
+        .args(["merge", &branch])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git merge 失败: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // 检查是否有冲突
+    let has_conflicts = !output.status.success() || stdout.contains("CONFLICT") || stderr.contains("CONFLICT");
+
+    Ok(serde_json::json!({
+        "success": output.status.success(),
+        "hasConflicts": has_conflicts,
+        "stdout": stdout,
+        "stderr": stderr,
+        "message": if has_conflicts {
+            format!("合并 {} 时发生冲突，请手动解决冲突后再提交", branch)
+        } else {
+            format!("已成功合并分支 {} 到当前分支", branch)
+        }
+    }))
+}
+
+/// 删除工作区文件
+#[tauri::command]
+pub fn delete_working_file(repo_path: String, file_path: String) -> Result<String, String> {
+    let full_path = std::path::Path::new(&repo_path).join(&file_path);
+
+    if !full_path.exists() {
+        return Err(format!("文件不存在: {}", file_path));
+    }
+
+    // 删除文件
+    if full_path.is_dir() {
+        std::fs::remove_dir_all(&full_path)
+            .map_err(|e| format!("删除目录失败: {}", e))?;
+    } else {
+        std::fs::remove_file(&full_path)
+            .map_err(|e| format!("删除文件失败: {}", e))?;
+    }
+
+    Ok(format!("已删除: {}", file_path))
 }

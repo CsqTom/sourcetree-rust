@@ -244,4 +244,12 @@ export const tauriCommands = {
   /** 使用指定策略解决冲突（ours/theirs） */
   resolveConflictWithStrategy: (repoPath: string, filePath: string, strategy: string) =>
     invoke<string>('resolve_conflict_with_strategy', { repoPath, filePath, strategy }),
+
+  /** 合并指定分支到当前分支 */
+  mergeBranch: (repoPath: string, branch: string) =>
+    invoke<{ success: boolean; hasConflicts: boolean; stdout: string; stderr: string; message: string }>('merge_branch', { repoPath, branch }),
+
+  /** 删除工作区文件 */
+  deleteWorkingFile: (repoPath: string, filePath: string) =>
+    invoke<string>('delete_working_file', { repoPath, filePath }),
 } as const
