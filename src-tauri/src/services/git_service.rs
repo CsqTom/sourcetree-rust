@@ -282,6 +282,9 @@ impl GitService {
     pub fn status(repo: &gix::Repository) -> Result<Vec<FileStatus>> {
         let mut files: Vec<FileStatus> = Vec::new();
 
+        // 先通过 git CLI 获取冲突文件列表（gix 的 status API 不直接暴露冲突标记）
+        let conflict_paths = Self::get_conflict_paths(repo);
+
         // 使用 gix 0.70 的 status API
         let platform = repo.status(gix::progress::Discard)?;
         let iter = platform.into_iter(Vec::<BString>::new())?;
@@ -298,6 +301,7 @@ impl GitService {
                     } => {
                         let path =
                             String::from_utf8_lossy(&rela_path).to_string();
+                        let is_conflict = conflict_paths.contains(&path);
                         let change_status = match &status {
                             gix_status::index_as_worktree::EntryStatus::Change(change) => {
                                 match change {
@@ -317,10 +321,11 @@ impl GitService {
                         };
                         files.push(FileStatus {
                             path,
-                            worktree_status: Some(change_status),
+                            worktree_status: Some(if is_conflict { ChangeStatus::Unmerged } else { change_status }),
                             stage_status: None,
                             is_untracked: false,
                             is_ignored: false,
+                            is_conflict,
                         });
                     }
                     // 未跟踪文件
@@ -332,6 +337,7 @@ impl GitService {
                             stage_status: None,
                             is_untracked: true,
                             is_ignored: false,
+                            is_conflict: false,
                         });
                     }
                     // 重命名/复制
@@ -352,13 +358,13 @@ impl GitService {
                             stage_status: None,
                             is_untracked: false,
                             is_ignored: false,
+                            is_conflict: false,
                         });
                     }
                 },
                 // 暂存区变更（Tree vs Index）
                 gix::status::Item::TreeIndex(change) => {
                     // 从 ChangeRef 中提取路径信息
-                    // Addition/Deletion/Modification 使用 location，Rewrite 使用 location（源路径）
                     let path: String = match &change {
                         gix::diff::index::ChangeRef::Addition { location, .. } => {
                             String::from_utf8_lossy(location.as_ref()).to_string()
@@ -374,6 +380,7 @@ impl GitService {
                         }
                     };
 
+                    let is_conflict = conflict_paths.contains(&path);
                     let status = match &change {
                         gix::diff::index::ChangeRef::Addition { .. } => ChangeStatus::Added,
                         gix::diff::index::ChangeRef::Deletion { .. } => ChangeStatus::Deleted,
@@ -383,15 +390,62 @@ impl GitService {
                     files.push(FileStatus {
                         path,
                         worktree_status: None,
-                        stage_status: Some(status),
+                        stage_status: Some(if is_conflict { ChangeStatus::Unmerged } else { status }),
                         is_untracked: false,
                         is_ignored: false,
+                        is_conflict,
                     });
                 }
             }
         }
 
+        // 添加仅存在于冲突列表中但未被 gix status 捕获的文件
+        let existing_paths: std::collections::HashSet<String> = files.iter().map(|f| f.path.clone()).collect();
+        for conflict_path in &conflict_paths {
+            if !existing_paths.contains(conflict_path) {
+                files.push(FileStatus {
+                    path: conflict_path.clone(),
+                    worktree_status: Some(ChangeStatus::Unmerged),
+                    stage_status: Some(ChangeStatus::Unmerged),
+                    is_untracked: false,
+                    is_ignored: false,
+                    is_conflict: true,
+                });
+            }
+        }
+
         Ok(files)
+    }
+
+    /// 通过 git CLI 获取冲突文件路径列表
+    fn get_conflict_paths(repo: &gix::Repository) -> std::collections::HashSet<String> {
+        let mut paths = std::collections::HashSet::new();
+        let workdir = match Self::work_dir(repo) {
+            Ok(w) => w,
+            Err(_) => return paths,
+        };
+
+        let output = match create_git_command()
+            .arg("-C")
+            .arg(&workdir)
+            .args(["diff", "--name-only", "--diff-filter=U"])
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => return paths,
+        };
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let path = line.trim().to_string();
+                if !path.is_empty() {
+                    paths.insert(path);
+                }
+            }
+        }
+
+        paths
     }
 
     /// 统计各状态文件数

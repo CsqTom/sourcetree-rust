@@ -18,6 +18,8 @@ pub enum ChangeStatus {
     Copied,
     /// 未修改
     Unmodified,
+    /// 冲突
+    Unmerged,
 }
 
 impl std::fmt::Display for ChangeStatus {
@@ -29,6 +31,7 @@ impl std::fmt::Display for ChangeStatus {
             ChangeStatus::Renamed => write!(f, "R"),
             ChangeStatus::Copied => write!(f, "C"),
             ChangeStatus::Unmodified => write!(f, "."),
+            ChangeStatus::Unmerged => write!(f, "U"),
         }
     }
 }
@@ -46,4 +49,6 @@ pub struct FileStatus {
     pub is_untracked: bool,
     /// 是否为忽略文件
     pub is_ignored: bool,
+    /// 是否为冲突文件
+    pub is_conflict: bool,
 }

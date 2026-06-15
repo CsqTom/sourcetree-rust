@@ -165,3 +165,146 @@ pub fn get_commit_file_diff(repo_path: String, commit_id: String, file_path: Str
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.to_string())
 }
+
+/// 获取冲突文件的三个版本内容
+///
+/// 返回 JSON：{ ours: string, theirs: string, base: string }
+/// ours: 当前分支版本（MERGE_HEAD 的对方版本用 git show :2:file）
+/// theirs: 传入分支版本（用 git show :3:file）
+/// base: 共同祖先版本（用 git merge-base + git show）
+#[tauri::command]
+pub fn get_conflict_content(repo_path: String, file_path: String) -> Result<serde_json::Value, String> {
+    // 获取 ours 版本（阶段2 = 我们的版本）
+    let ours_output = create_git_command()
+        .args(["show", &format!(":2:{}", file_path)])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("获取 ours 版本失败: {}", e))?;
+    // 如果 ours 中文件被删除，git show :2: 会失败，此时 ours 为空
+    let ours = if ours_output.status.success() {
+        String::from_utf8_lossy(&ours_output.stdout).to_string()
+    } else {
+        String::new()
+    };
+
+    // 获取 theirs 版本（阶段3 = 他们的版本）
+    let theirs_output = create_git_command()
+        .args(["show", &format!(":3:{}", file_path)])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("获取 theirs 版本失败: {}", e))?;
+    // 如果 theirs 中文件被删除，git show :3: 会失败，此时 theirs 为空
+    let theirs = if theirs_output.status.success() {
+        String::from_utf8_lossy(&theirs_output.stdout).to_string()
+    } else {
+        String::new()
+    };
+
+    // 获取 base 版本（共同祖先）
+    let base = get_merge_base_content(&repo_path, &file_path).unwrap_or_default();
+
+    Ok(serde_json::json!({
+        "ours": ours,
+        "theirs": theirs,
+        "base": base,
+    }))
+}
+
+/// 获取合并基线版本的文件内容
+fn get_merge_base_content(repo_path: &str, file_path: &str) -> Result<String, String> {
+    // 获取 merge-base 提交
+    let mb_output = create_git_command()
+        .args(["merge-base", "HEAD", "MERGE_HEAD"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("获取 merge-base 失败: {}", e))?;
+
+    if !mb_output.status.success() {
+        return Ok(String::new());
+    }
+
+    let merge_base = String::from_utf8_lossy(&mb_output.stdout).trim().to_string();
+
+    // 从 merge-base 提交获取文件内容
+    let show_output = create_git_command()
+        .args(["show", &format!("{}:{}", merge_base, file_path)])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("获取 base 文件内容失败: {}", e))?;
+
+    if !show_output.status.success() {
+        return Ok(String::new());
+    }
+
+    Ok(String::from_utf8_lossy(&show_output.stdout).to_string())
+}
+
+/// 解决冲突：将解决后的文件内容写入工作区并标记为已解决
+#[tauri::command]
+pub fn resolve_conflict(repo_path: String, file_path: String, content: String) -> Result<String, String> {
+    // 写入解决后的内容到工作区文件
+    let full_path = std::path::Path::new(&repo_path).join(&file_path);
+    std::fs::write(&full_path, &content)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+
+    // 将文件标记为已解决（git add）
+    let output = create_git_command()
+        .args(["add", "--", &file_path])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git add 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("标记冲突已解决失败: {}", stderr));
+    }
+
+    Ok(format!("冲突已解决: {}", file_path))
+}
+
+/// 使用指定版本解决冲突
+///
+/// strategy: "ours" | "theirs"
+#[tauri::command]
+pub fn resolve_conflict_with_strategy(
+    repo_path: String,
+    file_path: String,
+    strategy: String,
+) -> Result<String, String> {
+    let stage_num = match strategy.as_str() {
+        "ours" => "2",
+        "theirs" => "3",
+        _ => return Err(format!("不支持的策略: {}", strategy)),
+    };
+
+    // 从暂存区获取指定版本的内容
+    let show_output = create_git_command()
+        .args(["show", &format!(":{}:{}", stage_num, file_path)])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("获取 {} 版本失败: {}", strategy, e))?;
+
+    if !show_output.status.success() {
+        let stderr = String::from_utf8_lossy(&show_output.stderr);
+        return Err(format!("获取 {} 版本内容失败: {}", strategy, stderr));
+    }
+
+    // 写入工作区
+    let full_path = std::path::Path::new(&repo_path).join(&file_path);
+    std::fs::write(&full_path, &show_output.stdout)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+
+    // 标记为已解决
+    let add_output = create_git_command()
+        .args(["add", "--", &file_path])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("执行 git add 失败: {}", e))?;
+
+    if !add_output.status.success() {
+        let stderr = String::from_utf8_lossy(&add_output.stderr);
+        return Err(format!("标记冲突已解决失败: {}", stderr));
+    }
+
+    Ok(format!("使用 {} 版本解决冲突: {}", strategy, file_path))
+}

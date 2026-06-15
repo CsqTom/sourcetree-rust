@@ -39,7 +39,7 @@ function RepoLayout() {
   // 自定义 Hooks
   const {
     summary, commits, branches, branchTracking,
-    stagedFiles, unstagedFiles, untrackedFiles, isLoading: filesLoading, error: repoError,
+    conflictFiles, stagedFiles, unstagedFiles, untrackedFiles, isLoading: filesLoading, error: repoError,
   } = useRepoData(repoPath)
   const mutations = useRepoMutations(repoPath)
   const { selectedFile, selectedDiff, showDiff, refreshDiff, clearSelection } = useFileDiff(repoPath)
@@ -497,9 +497,11 @@ function RepoLayout() {
             style={{ display: activeNav === 'workspace' && activeWorkspaceTab === 'file-status' ? 'flex' : 'none' }}
           >
             <FileStatusContent
+              conflictFiles={conflictFiles}
               stagedFiles={stagedFiles}
               unstagedFiles={unstagedFiles}
               untrackedFiles={untrackedFiles}
+              repoPath={repoPath}
               selectedFile={selectedFile}
               selectedDiff={selectedDiff}
               commitMsg={commitMsg}

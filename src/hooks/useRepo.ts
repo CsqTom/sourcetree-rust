@@ -29,13 +29,14 @@ export function useRepoData(repoPath: string) {
   const { data: branchTracking = [] } = useQuery(repoQueries.tracking(repoPath))
 
   // 分类文件
-  const stagedFiles = files.filter((f: FileStatus) => f.stage_status)
-  const unstagedFiles = files.filter((f: FileStatus) => f.worktree_status && !f.stage_status && !f.is_untracked)
+  const conflictFiles = files.filter((f: FileStatus) => f.is_conflict)
+  const stagedFiles = files.filter((f: FileStatus) => f.stage_status && !f.is_conflict)
+  const unstagedFiles = files.filter((f: FileStatus) => f.worktree_status && !f.stage_status && !f.is_untracked && !f.is_conflict)
   const untrackedFiles = files.filter((f: FileStatus) => f.is_untracked)
 
   return {
     files, summary, commits, branches, branchTracking,
-    stagedFiles, unstagedFiles, untrackedFiles,
+    conflictFiles, stagedFiles, unstagedFiles, untrackedFiles,
     isLoading, error,
   }
 }

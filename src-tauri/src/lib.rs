@@ -44,6 +44,10 @@ pub fn run() {
             commands::status::get_commit_files,
             commands::status::get_commit_diff,
             commands::status::get_commit_file_diff,
+            // 冲突解决
+            commands::status::get_conflict_content,
+            commands::status::resolve_conflict,
+            commands::status::resolve_conflict_with_strategy,
             // 分支管理
             commands::branch::get_branch_tracking,
             commands::branch::create_branch,

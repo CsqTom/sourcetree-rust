@@ -12,6 +12,7 @@ export interface FileStatus {
   stage_status: string | null
   is_untracked: boolean
   is_ignored: boolean
+  is_conflict: boolean
 }
 
 // ===== 仓库摘要 =====
@@ -80,4 +81,15 @@ export interface CommitFileChange {
 export interface LineSelection {
   hunkIndex: number
   lineIndices: number[]
+}
+
+// ===== 冲突内容 =====
+
+export interface ConflictContent {
+  /** 当前分支版本（ours） */
+  ours: string
+  /** 传入分支版本（theirs） */
+  theirs: string
+  /** 共同祖先版本（base） */
+  base: string
 }

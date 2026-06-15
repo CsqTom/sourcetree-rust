@@ -13,6 +13,7 @@ import type {
   RemoteInfo,
   CommitFileChange,
   LineSelection,
+  ConflictContent,
 } from './types'
 
 // ===== 基础命令 =====
@@ -229,4 +230,18 @@ export const tauriCommands = {
   /** 列出所有标签 */
   listTags: (repoPath: string) =>
     invoke<string[]>('list_tags', { repoPath }),
+
+  // ===== 冲突解决命令 =====
+
+  /** 获取冲突文件的三个版本内容 */
+  getConflictContent: (repoPath: string, filePath: string) =>
+    invoke<ConflictContent>('get_conflict_content', { repoPath, filePath }),
+
+  /** 解决冲突：写入解决后的内容并标记为已解决 */
+  resolveConflict: (repoPath: string, filePath: string, content: string) =>
+    invoke<string>('resolve_conflict', { repoPath, filePath, content }),
+
+  /** 使用指定策略解决冲突（ours/theirs） */
+  resolveConflictWithStrategy: (repoPath: string, filePath: string, strategy: string) =>
+    invoke<string>('resolve_conflict_with_strategy', { repoPath, filePath, strategy }),
 } as const
