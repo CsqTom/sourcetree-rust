@@ -286,7 +286,9 @@ impl GitService {
         let conflict_paths = Self::get_conflict_paths(repo);
 
         // 使用 gix 0.70 的 status API
-        let platform = repo.status(gix::progress::Discard)?;
+        // 配置 untracked_files 为 Files 模式，确保显示每个单独的 untracked 文件
+        let platform = repo.status(gix::progress::Discard)?
+            .untracked_files(gix::status::UntrackedFiles::Files);
         let iter = platform.into_iter(Vec::<BString>::new())?;
 
         for item in iter {
